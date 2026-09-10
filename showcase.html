@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>车厢渲染检查</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    #info { position: fixed; top: 8px; left: 8px; color: #fff; font: 12px monospace; z-index: 10; }
+  </style>
+</head>
+<body>
+  <div id="info">render-capture</div>
+  <script type="module">
+    import * as THREE from 'three'
+    import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+    import {
+      createSummerCaravanModel,
+      createSummerCaravanLookDevLights,
+      createSummerCaravanEnvironment,
+      frameSummerCaravanCamera,
+      configureSummerCaravanRenderer,
+    } from '/src/createSummerCaravan.ts'
+    import {
+      createBlackCatCaravanModel,
+      createBlackCatCaravanLookDevLights,
+      createBlackCatCaravanEnvironment,
+      frameBlackCatCaravanCamera,
+      configureBlackCatCaravanRenderer,
+    } from '/src/createBlackCatModel.ts'
+    import {
+      createVintageCaravanModel,
+      createVintageCaravanLookDevLights,
+      createVintageCaravanEnvironment,
+      frameVintageCaravanCamera,
+      configureVintageCaravanRenderer,
+    } from '/src/createVintageModel.ts'
+    import {
+      createOceanCaravanModel,
+      createOceanCaravanLookDevLights,
+      createOceanCaravanEnvironment,
+      frameOceanCaravanCamera,
+      configureOceanCaravanRenderer,
+    } from '/src/createOceanModel.ts'
+    import {
+      createStarryCaravanModel,
+      createStarryCaravanLookDevLights,
+      createStarryCaravanEnvironment,
+      frameStarryCaravanCamera,
+      configureStarryCaravanRenderer,
+    } from '/src/createStarryModel.ts'
+
+    const params = new URLSearchParams(location.search)
+    const view = params.get('view') ?? 'fixed'
+    const which = params.get('model') ?? 'summer'
+
+    const mods = {
+      summer: { m: createSummerCaravanModel, l: createSummerCaravanLookDevLights, e: createSummerCaravanEnvironment, c: frameSummerCaravanCamera, r: configureSummerCaravanRenderer },
+      blackcat: { m: createBlackCatCaravanModel, l: createBlackCatCaravanLookDevLights, e: createBlackCatCaravanEnvironment, c: frameBlackCatCaravanCamera, r: configureBlackCatCaravanRenderer },
+      vintage: { m: createVintageCaravanModel, l: createVintageCaravanLookDevLights, e: createVintageCaravanEnvironment, c: frameVintageCaravanCamera, r: configureVintageCaravanRenderer },
+      ocean: { m: createOceanCaravanModel, l: createOceanCaravanLookDevLights, e: createOceanCaravanEnvironment, c: frameOceanCaravanCamera, r: configureOceanCaravanRenderer },
+      starry: { m: createStarryCaravanModel, l: createStarryCaravanLookDevLights, e: createStarryCaravanEnvironment, c: frameStarryCaravanCamera, r: configureStarryCaravanRenderer },
+    }
+    const sel = mods[which] ?? mods.summer
+    const createModel = sel.m
+    const createLights = sel.l
+    const createEnv = sel.e
+    const frameCam = sel.c
+    const configure = sel.r
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#dfe8f0')
+
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100)
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    if (configure) configure(renderer)
+    document.body.appendChild(renderer.domElement)
+
+    const env = createEnv(renderer)
+    if (env) scene.environment = env
+
+    scene.add(createLights(params.get('light') ?? 'neutral'))
+
+    const model = createModel({ qualityPriority: 'reference-fidelity' })
+    if (params.get('strip') === '1') {
+      const flat = new THREE.MeshBasicMaterial({ color: '#cccccc' })
+      model.traverse((obj) => { if (obj.isMesh) obj.material = flat })
+    }
+    scene.add(model)
+
+    const viewOpts = {
+      fixed: { azimuthDeg: -50, elevationDeg: 18 },
+      front: { azimuthDeg: 0, elevationDeg: 8 },
+      side: { azimuthDeg: 90, elevationDeg: 8 },
+      back: { azimuthDeg: 180, elevationDeg: 8 },
+      top: { azimuthDeg: 30, elevationDeg: 70 },
+    }
+    frameCam(camera, model, viewOpts[view] ?? viewOpts.fixed)
+
+    renderer.compile(scene, camera)
+    renderer.render(scene, camera)
+    requestAnimationFrame(() => {
+      renderer.render(scene, camera)
+      document.title = 'RENDER_DONE'
+      window.__renderDone = true
+    })
+
+    function loop() {
+      requestAnimationFrame(loop)
+      renderer.render(scene, camera)
+    }
+    loop()
+  </script>
+</body>
+</html>

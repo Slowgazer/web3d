@@ -2,3 +2,22 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# img2threejs 技能中间产物（可再生成）
+.img2threejs/
+img2threejs-showcase/
+detail_inventory.json
+shots/
+
+# 临时调试/验证脚本与截图
+verify*.mjs
+verify*.png
+debug_*.html
+debug_*.mjs
+check_*.py
+inspect_*.py
+fix_*.py
+patch_*.py
+read_gen_err.py
+regen_all.py
+capture_renders.mjs

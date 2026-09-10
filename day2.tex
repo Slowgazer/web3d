@@ -1,0 +1,223 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{xeCJK}
+\usepackage{geometry}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+
+% --- 页面几何布局设置 ---
+\geometry{left=2.3cm, right=2.3cm, top=2.5cm, bottom=2.5cm}
+
+% --- 颜色与样式定义 ---
+\definecolor{primaryblue}{RGB}{41, 128, 185}
+\definecolor{accentorange}{RGB}{211, 84, 0}
+\definecolor{boxgray}{RGB}{248, 249, 250}
+\definecolor{framegray}{RGB}{189, 195, 199}
+
+% --- 标题格式微调 ---
+\titleformat{\section}{\large\bfseries\color{black}}{\thesection}{1em}{}[{\titlerule[0.5pt]}]
+
+% --- 每日计划卡片样式定义 ---
+\newenvironment{dayplan}[1]{%
+    \begin{tcolorbox}[
+        breakable,
+        enhanced,
+        title={#1},
+        colback=boxgray,
+        colframe=framegray,
+        coltitle=black,
+        fonttitle=\bfseries\large,
+        attach boxed title to top left={yshift=-2mm, xshift=4mm},
+        boxed title style={colback=white, colframe=framegray, sharp corners, size=small},
+        sharp corners,
+        boxrule=0.8pt,
+        top=4mm
+    ]
+}{%
+    \end{tcolorbox}
+    \vspace{0.2cm}
+}
+
+% --- 取消列表默认间距 ---
+\setlist[itemize]{noitemsep, topsep=2pt, parsep=2pt}
+
+\begin{document}
+
+% --- 文档头部信息 ---
+\begin{center}
+    {\LARGE \textbf{《夏日海上列车》Web3D 互动叙事游戏项目工作计划书}} \\
+    \vspace{0.3cm}
+    \small \textbf{计划制定日期}：2026年7月8日 \quad | \quad \textbf{执行周期}：2026年7月8日 -- 7月15日（共8天）
+\end{center}
+
+\vspace{0.2cm}
+
+% --- 项目概述 ---
+\section*{一、 项目基本信息与技术路线}
+\begin{itemize}
+    \item \textbf{项目名称}：夏日海上列车
+    \item \textbf{技术路线简述}：基于原生 Three.js 引擎，应用 GLSL 自定义着色器（Voronoi 动漫海面 + 吉卜力风格天空渐变与云层）、CatmullRom 轨道系统及粒子特效，构建跨终端的沉浸式海上旅行互动叙事网页。
+    \item \textbf{团队成员与核心分工}：
+    \begin{itemize}
+        \item \textbf{马骏逸（组长）}：场景搭建、WASD 视角控制、海洋/天空着色器编写、轨道系统、时间系统、叙事框架、GUI 参数面板开发。
+        \item \textbf{黎佳易（组员）}：网上搜寻 GLTF/GLB 模型资产（列车、生物、环境装饰），模型格式转换与优化。
+    \end{itemize}
+\end{itemize}
+
+\section*{二、 八天日常联动作业计划明细}
+
+% --- Day 1 ---
+\begin{dayplan}{🛠️ 第 1 天：工程初始化与基础三维场景（2026年7月8日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：搭建 Vite + Three.js 工程，建立海面基础场景与光照。
+        \item \textbf{工程细节}：配置 \texttt{WebGLRenderer}（ACESFilmic 色调映射、PCFSoftShadowMap）、\texttt{PerspectiveCamera}、\texttt{OrbitControls}；创建基础海面 PlaneGeometry；添加 \texttt{DirectionalLight} 主光、\texttt{AmbientLight} 与 \texttt{HemisphereLight}；设置场景雾效、初始化 lil-gui 面板框架。
+        \item \textbf{输出物}：可运行的基础海面场景框架。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：搜寻项目所需的 3D 模型资产。
+        \item \textbf{工程细节}：在 Sketchfab、Open3DModel 等平台搜索老式海上列车、铁轨、装饰性环境点缀物等 GLTF/GLB 格式模型；评估模型面数与贴图质量，筛选适合网页端加载的资源。
+        \item \textbf{输出物}：模型资产清单（含来源 URL 与面数评估）。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 2 ---
+\begin{dayplan}{🌊 第 2 天：动漫风格海洋着色器开发（2026年7月9日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：编写 Voronoi 动漫风格海洋着色器。
+        \item \textbf{工程细节}：基于 Voronoi F1 - SmoothF1 边缘检测编写片元着色器，实现世界坐标锚定的色块化海面 + 正弦波顶点位移 + fbm 噪声域扭曲 + 三段色带（深色/中间色/高光）+ 距离淡出透明度；海面跟随相机实现无限海洋效果；提供 20+ 参数通过 lil-gui 实时调节（细胞大小/流动/颜色/波浪等）。
+        \item \textbf{输出物}：可交互调节的动漫风格海面。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：下载并格式转换模型资产。
+        \item \textbf{工程细节}：将下载的模型统一转换为 GLTF 格式（必要时使用 Blender 进行格式转档）；调整模型比例与坐标轴朝向，使其适配 Three.js 场景坐标系；初步导入场景测试加载是否正常。
+        \item \textbf{输出物}：转换完成的 GLTF 模型文件包。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 3 ---
+\begin{dayplan}{☁️ 第 3 天：吉卜力风格天空与视距控制（2026年7月10日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：实现吉卜力风格天空着色器与视距参数调节。
+        \item \textbf{工程细节}：编写 4 段暖色渐变天空着色器，球面坐标映射 FBM 噪声生成软云 + 太阳圆盘与辉光效果，云层 UV 采用球面映射避免地平线拉伸；添加视距控制 GUI（起雾距离/完全遮挡/相机远平面/天空半径），云朵参数（缩放/阈值/柔和/速度）可调；发现并修复天空盒瑕疵。
+        \item \textbf{输出物}：吉卜力风格天空 + 视距控制系统。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：优化场景视觉细节与模型材质。
+        \item \textbf{工程细节}：测试模型在场景中的光影表现；调整海面着色器的噪波大小、速度、颜色等参数使其与场景风格匹配；根据实际显示效果修复天空盒着色器的瑕疵与接缝问题；记录需要修复的模型问题。
+        \item \textbf{输出物}：场景视觉调优报告与模型测试反馈。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 4 ---
+\begin{dayplan}{🎨 第 4 天：海天融合调色与场景打磨（2026年7月11日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：将海洋颜色与天空/时间关联，实现海天一体的视觉统一。
+        \item \textbf{工程细节}：为主光源添加自动运动轨迹模拟时间流逝，天空着色器颜色随太阳高度角实时插值（日出暖橙/日中湛蓝/日落绯红/深夜星空）；海洋着色器的深水/浅水颜色与天空当前颜色联动，海面高光随光照方向自然变化；路灯根据环境亮度自动亮灭；星空粒子随夜晚降临渐显；GUI 提供时间流速倍率控制。
+        \item \textbf{输出物}：海天颜色联动的动态场景。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：优化场景资产融入感。
+        \item \textbf{工程细节}：根据海天调色结果调整模型的 roughness/metalness 参数，使其融入整体视觉语言；压缩贴图尺寸减少显存占用；美化环境布置（放置装饰物、调整摆放位置等）。
+        \item \textbf{输出物}：视觉风格统一的优化模型包。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 5 ---
+\begin{dayplan}{🐋 第 5 天：动物叙事系统（一）—— 模型加载与场景氛围（2026年7月12日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：加载生物模型，建立动物基础行为框架。
+        \item \textbf{工程细节}：通过 \texttt{GLTFLoader} 异步加载动物模型，绑定 \texttt{AnimationMixer} 播放内置动画；编写动物基础行为状态机，动物在轨道附近随机路径游动营造旅途氛围。
+        \item \textbf{输出物}：动物加载与基础行为框架。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：收集并优化动物与环境装饰模型。
+        \item \textbf{工程细节}：搜寻多种海洋动物及沿途环境点缀模型；确保模型格式统一为 GLTF 并附带基础动画；调整模型比例与场景匹配。
+        \item \textbf{输出物}：动物与环境模型资源包。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 6 ---
+\begin{dayplan}{💬 第 6 天：动物叙事系统（二）—— 交互与剧情框架（2026年7月13日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：搭建动物交互触发与剧情叙事框架。
+        \item \textbf{工程细节}：基于坐标路点触发剧情事件——列车到达特定位置时自动触发动物展示动画与对话框；实现基础对话 UI 系统（文字显示 + 选项按钮）；搭建简易状态机管理剧情进度；交互方式与具体剧情内容留待后续确定。
+        \item \textbf{输出物}：事件触发 + 对话框架原型。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：配合剧情需求调整动物动画。
+        \item \textbf{工程细节}：为剧情相关的动物角色调整或制作特定展示动画，导出为 GLTF 嵌入动画；配合组长测试事件触发时的动画播放效果。
+        \item \textbf{输出物}：含剧情动画的 GLTF 角色包。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 7 ---
+\begin{dayplan}{🚂 第 7 天：轨道系统、时间系统整合与全场景联调（2026年7月14日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：实现列车轨道系统，整合时间系统与叙事框架。
+        \item \textbf{工程细节}：使用 CatmullRomCurve3 定义海上轨道路径，列车沿轨道匀速行进；相机绑定列车位置 + 自由视角环顾；将时间系统、海天调色、动物叙事全部串联；修复已知 Bug 与交互体验问题；整理 lil-gui 面板参数。
+        \item \textbf{输出物}：功能串联完毕的可运行场景原型。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：最终视觉打磨与环境美化。
+        \item \textbf{工程细节}：在全场景中检查视觉一致性，调整海面噪波参数、天空颜色过渡、雾效距离等细节；添加美化点缀物完善旅途氛围；调整模型 LOD 切换距离优化远景观感。
+        \item \textbf{输出物}：视觉打磨完成的全场景资产包。
+    \end{itemize}
+\end{dayplan}
+
+% --- 补充任务：VR（视时间与精力决定是否投入） ---
+\begin{dayplan}{🕶️ 补充任务：WebXR VR 支持（视时间与精力决定投入程度）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：（如有余力）协助搭建基础 WebXR 渲染管线。
+        \item \textbf{工程细节}：导入 \texttt{VRButton}，启用 \texttt{renderer.xr.enabled}；切换动画循环为 \texttt{setAnimationLoop}。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：（如有余力）主导 VR 功能开发与适配。
+        \item \textbf{工程细节}：添加左右手柄控制器模型与射线指示器；监听 XR 会话事件，进入 VR 自动隐藏桌面 UI 并禁用 OrbitControls，退出恢复；验证模型在 VR 双目渲染下的缩放比例与兼容性；调整 LOD 切换距离避免远处闪烁。
+        \item \textbf{输出物}：（可选）支持 VR 头显浏览的场景。
+    \end{itemize}
+\end{dayplan}
+
+% --- Day 8 ---
+\begin{dayplan}{🏁 第 8 天：综合联调、性能优化与发布（2026年7月15日）}
+    \textcolor{primaryblue}{\textbf{💻 马骏逸（组长）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：全功能验收测试，60fps 稳定帧率保障与部署。
+        \item \textbf{工程细节}：检测桌面与移动端运行帧率，合并 Draw Call 优化渲染性能；修复已知 Bug；确保参数通过 localStorage 持久化；将项目推送至 GitHub 仓库并设置标签。
+        \item \textbf{输出物}：可公开访问的完整互动叙事网页成品。
+    \end{itemize}
+    \vspace{0.3cm}
+    \textcolor{accentorange}{\textbf{🎨 黎佳易（组员）}}
+    \begin{itemize}
+        \item \textbf{工作内容}：最终模型资产清理与归档。
+        \item \textbf{工程细节}：剔除项目中未使用的冗余模型文件；整理最终资产清单（含来源 URL 与使用说明）。
+        \item \textbf{输出物}：模型资产使用文档与备份包。
+    \end{itemize}
+\end{dayplan}
+
+\end{document}

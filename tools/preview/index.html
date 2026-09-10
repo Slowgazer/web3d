@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>img2threejs 模型预览</title>
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #808080; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three'
+
+// 用法: /tools/preview/?model=src/models/xxx.js&az=35&el=20&dist=6&width=1024&height=768
+const q = new URLSearchParams(location.search)
+const modelPath = q.get('model')
+const az = parseFloat(q.get('az') ?? '35') * Math.PI / 180
+const el = parseFloat(q.get('el') ?? '18') * Math.PI / 180
+const dist = parseFloat(q.get('dist') ?? '0') // 0 = 自动取景
+
+async function boot() {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+  const width = parseInt(q.get('width') ?? '1024')
+  const height = parseInt(q.get('height') ?? '768')
+  renderer.setSize(width, height)
+  renderer.setPixelRatio(1)
+  document.body.appendChild(renderer.domElement)
+
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x808080)
+
+  const camera = new THREE.PerspectiveCamera(40, width / height, 0.01, 2000)
+
+  // 中性摄影棚布光：主光 + 补光 + 顶光 + 环境
+  const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(4, 6, 5); scene.add(key)
+  const fill = new THREE.DirectionalLight(0xffffff, 1.1); fill.position.set(-5, 3, -2); scene.add(fill)
+  const top = new THREE.DirectionalLight(0xffffff, 0.8); top.position.set(0, 8, -4); scene.add(top)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55))
+
+  let group = null
+  if (modelPath) {
+    const mod = await import(/* @vite-ignore */ '/' + modelPath.replace(/^\/+/, ''))
+    // 约定：工厂函数导出为 create*Model，可无参调用；也兼容 default 导出
+    const factory = Object.values(mod).find(
+      (e) => typeof e === 'function' && /^(create|build)/i.test(e.name)
+    ) ?? mod.default
+    if (!factory) throw new Error('未找到 create*/build* 工厂函数: ' + modelPath)
+    group = await factory()
+    if (!(group instanceof THREE.Group)) {
+      group = new THREE.Group().add(group)
+    }
+    scene.add(group)
+
+    // 自动取景：包围球半径决定相机距离
+    const box = new THREE.Box3().setFromObject(group)
+    const sphere = box.getBoundingSphere(new THREE.Sphere())
+    const d = dist > 0 ? dist : sphere.radius / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.25
+    const center = sphere.center
+    camera.position.set(
+      center.x + d * Math.cos(el) * Math.sin(az),
+      center.y + d * Math.sin(el),
+      center.z + d * Math.cos(el) * Math.cos(az)
+    )
+    camera.lookAt(center)
+    camera.updateProjectionMatrix()
+  } else {
+    // 无参数时的占位测试模型
+    group = new THREE.Group()
+    group.add(new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0xcc4444, roughness: 0.4 })
+    ))
+    scene.add(group)
+    camera.position.set(2.4, 1.6, 2.4)
+    camera.lookAt(0, 0, 0)
+  }
+
+  renderer.render(scene, camera)
+  // 截图脚本等待此标志
+  window.__ready = true
+  window.__modelRoot = group
+}
+
+boot().catch((err) => {
+  document.body.innerHTML = '<pre style="color:#f66">' + err.stack + '</pre>'
+  window.__error = String(err)
+})
+</script>
+</body>
+</html>

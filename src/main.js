@@ -5,6 +5,12 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import GUI from 'lil-gui'
+import { VRButton } from 'three/examples/jsm/webxr/VRButton.js'
+import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js'
+import {
+  createCarriage, updateCarriageAnimation,
+  createBlackCatDisplay, createStarryDisplay, createVintageDisplay, createOceanDisplay,
+} from './carriage.js'
 
 const SUNFLOWER_PATH = '/models/Sunflower/PUSHILIN_sunflower.obj'
 const SUNFLOWER_MTL = '/models/Sunflower/PUSHILIN_sunflower.mtl'
@@ -99,11 +105,16 @@ function loadFBX(path, targetHeight) {
 // ---- 场景初始化 ----
 const scene = new THREE.Scene()
 scene.background = new THREE.Color('#87ceeb')
-scene.fog = new THREE.Fog('#cde4f0', 30, 120)
+scene.fog = new THREE.Fog('#cde4f0', 70, 1700)
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 150)
 camera.position.set(15, 10, 20)
 camera.lookAt(0, 2, 0)
+
+// 更新相机远平面为2000以适应扩大的视距
+camera.far = 3300
+camera.updateProjectionMatrix()
+camera.updateProjectionMatrix()
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
@@ -114,10 +125,51 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.2
 document.body.appendChild(renderer.domElement)
 
+renderer.xr.enabled = true
+document.body.appendChild(VRButton.createButton(renderer))
+
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true; controls.dampingFactor = 0.08
-controls.maxPolarAngle = Math.PI / 2.2; controls.minDistance = 5
-controls.maxDistance = 50; controls.target.set(0, 2, 0); controls.update()
+controls.minDistance = 5
+controls.maxDistance = 500; controls.target.set(0, 2, 0); controls.update()
+
+// ---- VR 控制器 ----
+const controller1 = renderer.xr.getController(0)
+const controller2 = renderer.xr.getController(1)
+scene.add(controller1)
+scene.add(controller2)
+
+const controllerModelFactory = new XRControllerModelFactory()
+const grip1 = renderer.xr.getControllerGrip(0)
+grip1.add(controllerModelFactory.createControllerModel(grip1))
+scene.add(grip1)
+const grip2 = renderer.xr.getControllerGrip(1)
+grip2.add(controllerModelFactory.createControllerModel(grip2))
+scene.add(grip2)
+
+// 控制器射线（用于后续交互）
+const rayMat = new THREE.LineBasicMaterial({ color: 0x88ccff })
+const rayGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0, 0, 0),
+  new THREE.Vector3(0, 0, -5),
+])
+;[controller1, controller2].forEach((c) => {
+  const ray = new THREE.Line(rayGeo.clone(), rayMat)
+  ray.name = 'controller-ray'
+  c.add(ray)
+})
+
+// XR 会话事件
+renderer.xr.addEventListener('sessionstart', () => {
+  controls.enabled = false
+  document.getElementById('scene-tools').style.display = 'none'
+  gui.domElement.style.display = 'none'
+})
+renderer.xr.addEventListener('sessionend', () => {
+  controls.enabled = true
+  document.getElementById('scene-tools').style.display = ''
+  gui.domElement.style.display = ''
+})
 
 // ---- 草地 ----
 const groundGeo = new THREE.PlaneGeometry(60, 60, 60, 60)
@@ -140,14 +192,251 @@ grassMesh.rotation.x = -Math.PI / 2
 grassMesh.receiveShadow = true
 scene.add(grassMesh)
 
-// 天空球
+// 天空球（吉卜力风格 - 参考 craftzdog/ghibli-style-shader）
+const skyUniforms = {
+  uTime: { value: 0 },
+  uTopColor: { value: new THREE.Color('#faf0e0') },
+  uMidTopColor: { value: new THREE.Color('#e8c8a0') },
+  uMidBotColor: { value: new THREE.Color('#7ec8e8') },
+  uBotColor: { value: new THREE.Color('#3a7aa5') },
+  uSunDir: { value: new THREE.Vector3(0.3, 0.5, 0.8).normalize() },
+  uSunColor: { value: new THREE.Color('#ffe8b0') },
+  uSunGlow: { value: 0.9 },
+  uCloudScale: { value: 2.0 },
+  uCloudThreshold: { value: 0.45 },
+  uCloudSoftness: { value: 0.12 },
+  uCloudSpeed: { value: 0.015 },
+  uNightMode: { value: 0.0 },
+  uNightTop: { value: new THREE.Color('#0a0a1a') },
+  uNightBot: { value: new THREE.Color('#1a1a3e') },
+}
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide,
-  uniforms: { uTop: { value: new THREE.Color('#7cb7d8') }, uBot: { value: new THREE.Color('#e8f0d8') } },
-  vertexShader: `varying vec3 p; void main() { vec4 w=modelMatrix*vec4(position,1.0); p=w.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader: `uniform vec3 uTop,uBot; varying vec3 p; void main() { float h=normalize(p).y*.5+.5; gl_FragColor=vec4(mix(uBot,uTop,h),1.0); }`,
+  uniforms: skyUniforms,
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWorldPos = w.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    uniform vec3 uTopColor;
+    uniform vec3 uMidTopColor;
+    uniform vec3 uMidBotColor;
+    uniform vec3 uBotColor;
+    uniform vec3 uSunDir;
+    uniform vec3 uSunColor;
+    uniform float uSunGlow;
+    uniform float uCloudScale;
+    uniform float uCloudThreshold;
+    uniform float uCloudSoftness;
+    uniform float uCloudSpeed;
+    uniform float uNightMode;
+    uniform vec3 uNightTop;
+    uniform vec3 uNightBot;
+    varying vec3 vWorldPos;
+
+    float hash(vec2 p) {
+      p = fract(p * vec2(127.1, 311.7));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+        mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+        f.y
+      );
+    }
+    float fbm(vec2 p) {
+      float v = 0.0, a = 0.5;
+      for (int i = 0; i < 4; i++) { v += a * vnoise(p); p *= 2.3; a *= 0.5; }
+      return v;
+    }
+
+    void main() {
+      vec3 dir = normalize(vWorldPos);
+      float h = dir.y * 0.5 + 0.5;
+
+      // 4 段吉卜力风格渐变
+      vec3 dayColor;
+      if (h < 0.25) {
+        dayColor = mix(uBotColor, uMidBotColor, h / 0.25);
+      } else if (h < 0.55) {
+        dayColor = mix(uMidBotColor, uMidTopColor, (h - 0.25) / 0.3);
+      } else {
+        dayColor = mix(uMidTopColor, uTopColor, (h - 0.55) / 0.45);
+      }
+
+      // 太阳（圆盘 + 辉光）
+      float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
+      float sunDisc = smoothstep(0.998, 1.0, sunDot);
+      float sunGlow = smoothstep(0.85, 1.0, sunDot) * uSunGlow;
+
+      // 云（FBM 噪声，球面映射避免地平线拉伸）
+      vec2 cloudUV = vec2(atan(dir.z, dir.x), asin(dir.y)) * uCloudScale + uTime * uCloudSpeed;
+      float cloud = fbm(cloudUV);
+      float cloudAlpha = smoothstep(
+        uCloudThreshold - uCloudSoftness,
+        uCloudThreshold + uCloudSoftness,
+        cloud
+      );
+      cloudAlpha *= smoothstep(0.48, 0.55, h) * smoothstep(0.85, 0.6, h);
+
+      vec3 cloudColor = mix(vec3(1.0, 0.95, 0.85), uSunColor, 0.3);
+      vec3 col = mix(dayColor, cloudColor, cloudAlpha * 0.65);
+      col += sunDisc * uSunColor * 2.0 + sunGlow * uSunColor * 0.4;
+
+      // 夜晚混合
+      vec3 nightColor = mix(uNightTop, uNightBot, h);
+      col = mix(col, nightColor, uNightMode);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
 })
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(70, 32, 32), skyMat))
+const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 32), skyMat)
+scene.add(skyMesh)
+
+// ---- 旋转星空（星轨效果） ----
+const starUniforms = {
+  uTime: { value: 0 },
+  uRotationAngle: { value: 0 },
+  uTrailLenMin: { value: 200 },
+  uTrailLenMax: { value: 2000 },
+  uSwirlMode: { value: 0.0 },
+  uStarBrightness: { value: 1.5 },
+  uNightMode: { value: 0.0 },
+  uTrailTime: { value: 0 },
+  uTrailOpacity: { value: 0.4 },
+  uTrailWidthFactor: { value: 0.2 },
+}
+const starMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  uniforms: starUniforms,
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWorldPos = w.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    uniform float uRotationAngle;
+    uniform float uTrailLenMin;
+    uniform float uTrailLenMax;
+    uniform float uSwirlMode;
+    uniform float uStarBrightness;
+    uniform float uNightMode;
+    uniform float uTrailTime;
+    uniform float uTrailOpacity;
+    uniform float uTrailWidthFactor;
+    varying vec3 vWorldPos;
+
+    float hash(vec2 p) {
+      p = fract(p * vec2(127.1, 311.7));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+
+    void main() {
+      vec3 dir = normalize(vWorldPos);
+      float h = dir.y * 0.5 + 0.5;
+
+      float visible = smoothstep(0.15, 0.4, h) * (1.0 - smoothstep(0.85, 1.0, h)) * uNightMode;
+      float trailMode = step(0.5, uSwirlMode);
+
+  // 绕 X 轴旋转方向向量（始终应用，星轨关闭时星星停在原地）
+  float c = cos(uRotationAngle);
+  float s = sin(uRotationAngle);
+      vec3 rDir = dir;
+      rDir.y = dir.y * c - dir.z * s;
+      rDir.z = dir.y * s + dir.z * c;
+
+      vec2 uv = vec2(atan(rDir.z, rDir.x), asin(rDir.y));
+
+      // ========== 星星层 ==========
+      vec2 suv = uv * 55.0;
+      vec2 si = floor(suv), sf = fract(suv);
+      float sh = hash(si);
+      vec2 sc = vec2(
+        hash(si + 0.5) + 0.4 * sin(hash(si + 1.2) * 6.283),
+        hash(si + 7.7) + 0.4 * cos(hash(si + 3.4) * 6.283)
+      );
+      float d = length(sf - sc);
+      float star = smoothstep(0.05 + sh * 0.12, 0.0, d);
+      float twinkle = 0.7 + 0.3 * sin(uTime * (0.3 + sh * 0.7) + sh * 6.283);
+
+      vec3 starCol = mix(vec3(1.0, 0.85, 0.6), vec3(0.7, 0.8, 1.0), sh);
+      float starMask = star * twinkle * visible * step(0.5, sh);
+
+      // ========== 拖尾（Voronoi 圆弧，沿 YZ 方向） ==========
+      float trailVal = 0.0;
+      {
+        float xAngle = acos(clamp(rDir.x, -1.0, 1.0));
+        float yzAngle = atan(rDir.z, rDir.y);
+        vec2 vuv = vec2(xAngle * 10.0, yzAngle * 6.0);
+        vec2 vi = floor(vuv);
+
+        for (int ox = -1; ox <= 1; ox++) {
+          for (int oy = -30; oy <= 0; oy++) {
+            vec2 ni = vi + vec2(float(ox), float(oy));
+            float hh = hash(ni + 600.0);
+            if (hh < 0.45) continue;
+
+            vec2 seed = vec2(hash(ni + 600.1), hash(ni + 600.2));
+            vec2 delta = (ni + seed) - vuv;
+
+            // 转换到弧度
+            float yzD_rad = delta.y / 6.0;
+            float xD_rad = abs(delta.x) / 10.0;
+
+            // Box-Muller → 正态分布长度
+            float u1 = hash(ni + 600.5);
+            float u2 = hash(ni + 600.6);
+            float z = sqrt(-2.0 * log(max(u1, 0.00001))) * cos(6.28318 * u2);
+            float mean = (uTrailLenMin + uTrailLenMax) * 0.5;
+            float std = (uTrailLenMax - uTrailLenMin) * 0.1667;
+            float maxLen = clamp(mean + z * std, uTrailLenMin, uTrailLenMax);
+            float tLenRaw = (0.08 + hash(ni + 600.3) * 0.25) * maxLen * 0.008;
+            float totalCycle = 70.0;
+            float activeCycle = 60.0;
+            float tMod = mod(uTrailTime, totalCycle);
+            float triBase = 1.0 - abs(2.0 * min(tMod / activeCycle, 1.0) - 1.0);
+            float tri = step(tMod, activeCycle) * triBase;
+            float tLen = tLenRaw * tri;
+
+            float tw = (0.003 + hash(ni + 600.4) * 0.005) * uTrailWidthFactor;
+
+            float tr = step(yzD_rad, 0.0) * clamp(1.0 + yzD_rad / max(tLen, 0.001), 0.0, 1.0);
+            tr *= exp(-xD_rad * xD_rad / max(tw * tw, 0.000001));
+            tr = max(0.0, tr) * trailMode;
+
+            if (tr > trailVal) {
+              trailVal = tr;
+            }
+          }
+        }
+        trailVal *= uTrailOpacity;
+      }
+
+      float mask = max(starMask, trailVal);
+      gl_FragColor = vec4(starCol * mask * uStarBrightness, mask * uStarBrightness);
+    }
+  `,
+})
+const starSphere = new THREE.Mesh(new THREE.SphereGeometry(1495, 32, 32), starMat)
+scene.add(starSphere)
 
 // ---- 海洋（动漫风格 Voronoi 水面 - 参考 cortiz2894/water-anime-shader） ----
 const oUniforms = {
@@ -162,20 +451,20 @@ const oUniforms = {
   uNoiseScale: { value: 0.87 },
   uNoiseFlowSpeed: { value: 0.11 },
   uDistortAmount: { value: 0.26 },
-  uDeepColor: { value: new THREE.Color('#27a3d8') },
+  uDeepColor: { value: new THREE.Color('#3a7aa5') },
   uMidColor: { value: new THREE.Color('#59c0e8') },
   uMidPos: { value: 0.31 },
   uHighlight: { value: new THREE.Color('#ffffff') },
   uOpacity: { value: 1.0 },
-  uDeepOpacity: { value: 0.37 },
-  uFadeDistance: { value: 275 },
-  uFadeStrength: { value: 1.3 },
+  uDeepOpacity: { value: 0.7 },
+  uFadeDistance: { value: 1000 },
+  uFadeStrength: { value: 0.8 },
   uCamXZ: { value: new THREE.Vector2() },
   uWaveHeight: { value: 0.08 },
   uWaveFreq: { value: 0.3 },
   uWaveSpeed: { value: 0.5 },
 }
-const oGeo = new THREE.PlaneGeometry(600, 600, 200, 200)
+const oGeo = new THREE.PlaneGeometry(3000, 3000, 200, 200)
 oGeo.rotateX(-Math.PI / 2)
 const oMat = new THREE.ShaderMaterial({
   uniforms: oUniforms,
@@ -317,6 +606,76 @@ const ocean = new THREE.Mesh(oGeo, oMat)
 ocean.position.y = -0.3
 scene.add(ocean)
 
+// ---- 铁轨路基（梯形截面，一半在水下半在水上） ----
+const railShape = new THREE.Shape()
+const rbw = 2.0 // 底部半宽
+const rtw = 1.0 // 顶部半宽
+const rrh = 1.0 // 总高
+railShape.moveTo(-rbw, -rrh / 2)
+railShape.lineTo(rbw, -rrh / 2)
+railShape.lineTo(rtw, rrh / 2)
+railShape.lineTo(-rtw, rrh / 2)
+railShape.closePath()
+const railGeo = new THREE.ExtrudeGeometry(railShape, { depth: 200, bevelEnabled: false })
+const railMat = new THREE.MeshStandardMaterial({ color: '#c4a64a', roughness: 0.8 })
+const railbed = new THREE.Mesh(railGeo, railMat)
+railbed.rotation.y = -Math.PI / 2
+railbed.position.set(100, -0.3, 0)
+railbed.castShadow = true
+railbed.receiveShadow = true
+scene.add(railbed)
+
+// ---- 铁轨线条 ----
+const trackMat = new THREE.LineBasicMaterial({ color: '#888888' })
+const trackY = -0.3 + rrh / 2
+const trackZ = 0.75
+for (const z of [-trackZ, trackZ]) {
+  const pts = [new THREE.Vector3(-100, trackY, z), new THREE.Vector3(100, trackY, z)]
+  const g = new THREE.BufferGeometry().setFromPoints(pts)
+  scene.add(new THREE.Line(g, trackMat))
+}
+
+// ---- 列车车厢（夏日幻想主题，朝向 +X） ----
+const carriageObj = createCarriage()
+const train = carriageObj.group
+train.position.set(0, trackY + 0.15, 0)
+scene.add(train)
+
+// ---- 展示车厢（悬浮在列车上方） ----
+const displayGroup = new THREE.Group()
+displayGroup.position.set(0, 6, 0)
+scene.add(displayGroup)
+
+const displayModels = [
+  { name: '黑猫', model: createBlackCatDisplay(), x: -4.5 },
+  { name: '星空', model: createStarryDisplay(), x: -1.5 },
+  { name: '复古', model: createVintageDisplay(), x: 1.5 },
+  { name: '海浪', model: createOceanDisplay(), x: 4.5 },
+]
+displayModels.forEach(({ model, x }) => {
+  model.position.set(x, 0, 0)
+  displayGroup.add(model)
+})
+
+let trainRunning = false
+let trainPaused = false
+const trainSpeed = 15
+const TRAIN_LIMIT = 100
+document.getElementById('btn-train-start').addEventListener('click', () => {
+  if (!trainRunning) {
+    trainRunning = true
+    trainPaused = false
+    document.getElementById('btn-train-start').textContent = '🚂 运行中'
+    document.getElementById('btn-pause').textContent = '⏸ 暂停'
+  }
+})
+document.getElementById('btn-pause').addEventListener('click', () => {
+  if (trainRunning) {
+    trainPaused = !trainPaused
+    document.getElementById('btn-pause').textContent = trainPaused ? '▶ 继续' : '⏸ 暂停'
+  }
+})
+
 // ---- 光照 ----
 scene.add(new THREE.AmbientLight('#ffeedd', 0.4))
 scene.add(new THREE.HemisphereLight('#87ceeb', '#6a8a4a', 0.5))
@@ -326,6 +685,8 @@ sun.castShadow = true
 sun.shadow.mapSize.set(4096, 4096)
 sun.shadow.camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.5, 130)
 sun.shadow.bias = -0.0005
+sun.target.position.set(0, 0, 0)
+scene.add(sun.target)
 scene.add(sun)
 scene.add(new THREE.DirectionalLight('#a0c8e8', 0.3).position.set(-15, 8, -10))
 
@@ -762,13 +1123,55 @@ of.addColor(oUniforms.uDeepColor, 'value').name('深水颜色')
 of.addColor(oUniforms.uMidColor, 'value').name('中间颜色')
 of.add(oUniforms.uMidPos, 'value', 0.001, 0.999, 0.001).name('中间位置')
 of.addColor(oUniforms.uHighlight, 'value').name('高光颜色')
-of.add(oUniforms.uOpacity, 'value', 0, 1, 0.01).name('透明度')
+of.add(oUniforms.uOpacity, 'value', 0, 2, 0.01).name('透明度')
 of.add(oUniforms.uDeepOpacity, 'value', 0, 1, 0.01).name('深水透明度')
-of.add(oUniforms.uFadeDistance, 'value', 10, 300, 5).name('淡出距离')
+of.add(oUniforms.uFadeDistance, 'value', 10, 10000, 10).name('淡出距离')
 of.add(oUniforms.uFadeStrength, 'value', 0.1, 5, 0.1).name('淡出强度')
 of.add(oUniforms.uWaveHeight, 'value', 0, 0.5, 0.005).name('波浪高度')
 of.add(oUniforms.uWaveFreq, 'value', 0.05, 2, 0.01).name('波浪频率')
 of.add(oUniforms.uWaveSpeed, 'value', 0, 2, 0.05).name('波浪速度')
+
+const sf = gui.addFolder('☁️ 天空（吉卜力）')
+sf.addColor(skyUniforms.uTopColor, 'value').name('顶部颜色')
+sf.addColor(skyUniforms.uMidTopColor, 'value').name('中上颜色')
+sf.addColor(skyUniforms.uMidBotColor, 'value').name('中下颜色')
+sf.addColor(skyUniforms.uBotColor, 'value').name('地平线颜色')
+sf.addColor(skyUniforms.uSunColor, 'value').name('太阳颜色')
+sf.add(skyUniforms.uSunGlow, 'value', 0, 2, 0.05).name('太阳辉光')
+sf.add(skyUniforms.uCloudScale, 'value', 0.001, 0.1, 0.001).name('云朵缩放')
+sf.add(skyUniforms.uCloudThreshold, 'value', 0.1, 0.9, 0.01).name('云朵阈值')
+sf.add(skyUniforms.uCloudSoftness, 'value', 0.01, 0.5, 0.01).name('云朵柔和')
+sf.add(skyUniforms.uCloudSpeed, 'value', 0, 0.1, 0.002).name('云朵速度')
+
+const swf = gui.addFolder('🌀 星轨')
+swf.add(starUniforms.uStarBrightness, 'value', 0, 3, 0.1).name('星星亮度')
+swf.add(starUniforms.uTrailLenMin, 'value', 0, 200, 1).name('拖尾长度最小值')
+swf.add(starUniforms.uTrailLenMax, 'value', 0, 200, 1).name('拖尾长度最大值')
+swf.add(starUniforms.uTrailOpacity, 'value', 0, 1, 0.05).name('拖尾不透明度')
+swf.add(starUniforms.uTrailWidthFactor, 'value', 0.05, 1, 0.05).name('拖尾宽度')
+
+const vf = gui.addFolder('📐 视距')
+const viewState = { fogNear: 70, fogFar: 1700, farPlane: 3300, skyRadius: 3300 }
+vf.add(viewState, 'fogNear', 5, 10000, 1).name('起雾距离').onChange((v) => {
+  scene.fog.near = v
+  origFog.near = v
+})
+vf.add(viewState, 'fogFar', 10, 10000, 5).name('完全遮挡距离').onChange((v) => {
+  scene.fog.far = v
+  origFog.far = v
+})
+vf.add(viewState, 'farPlane', 50, 50000, 10).name('相机远平面').onChange((v) => {
+  camera.far = v
+  camera.updateProjectionMatrix()
+})
+vf.add(viewState, 'skyRadius', 50, 50000, 10).name('天空半径').onChange((v) => {
+  scene.remove(skyMesh)
+  skyMesh.geometry.dispose()
+  skyMesh.geometry = new THREE.SphereGeometry(v, 32, 32)
+  scene.add(skyMesh)
+})
+
+// 远平面说明：超出此距离的物体完全被裁剪不渲染，应与雾的完全遮挡距离配合使用
 
 // ---- 随机形状生成 ----
 const shapeColors = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xe67e22]
@@ -783,6 +1186,7 @@ const origHemisphereIntensity = 0.5
 const shapeMeshes = []
 let selectedShape = null
 let shapeOutline = null
+let lastTime = 0
 
 function createRandomShape() {
   const type = shapeTypes[Math.floor(Math.random() * shapeTypes.length)]
@@ -883,31 +1287,6 @@ document.addEventListener('keydown', (e) => {
   }
 })
 
-// 星空粒子
-const starCount = 300
-const starGeo = new THREE.BufferGeometry()
-const starPos = new Float32Array(starCount * 3)
-const starCol = new Float32Array(starCount * 3)
-for (let i = 0; i < starCount; i++) {
-  const theta = Math.random() * Math.PI * 2
-  const phi = Math.acos(0.3 + Math.random() * 0.7)
-  const r = 40 + Math.random() * 15
-  starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta)
-  starPos[i * 3 + 1] = r * Math.cos(phi)
-  starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta)
-  const b = 0.6 + Math.random() * 0.4
-  starCol[i * 3] = b; starCol[i * 3 + 1] = b; starCol[i * 3 + 2] = 0.8 + Math.random() * 0.2
-}
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3))
-starGeo.setAttribute('color', new THREE.BufferAttribute(starCol, 3))
-const starMat2 = new THREE.PointsMaterial({
-  size: 1.2, transparent: true, opacity: 1, sizeAttenuation: true,
-  vertexColors: true,
-})
-const stars = new THREE.Points(starGeo, starMat2)
-stars.visible = false
-scene.add(stars)
-
 // ---- 雪效 ----
 let snowing = false
 const SNOW_COUNT = 2000
@@ -987,16 +1366,14 @@ rainBtn.addEventListener('click', () => {
 function toggleDayNight() {
   nightMode = !nightMode
   if (nightMode) {
-    scene.background = new THREE.Color('#0a0a1a')
-    scene.fog = new THREE.Fog('#0a0a1a', 15, 40)
-    sun.intensity = 0.3
+    scene.background = new THREE.Color('#0f1a2e')
+    scene.fog = new THREE.Fog('#0f1a2e', 33, 670)
+    sun.intensity = 1.0
     scene.children.forEach((c) => {
-      if (c.isAmbientLight) c.intensity = 0.15
-      if (c.isHemisphereLight) c.intensity = 0.15
+      if (c.isAmbientLight) c.intensity = 0.3
+      if (c.isHemisphereLight) c.intensity = 0.3
     })
-    skyMat.uniforms.uTop.value.set('#0a0a2e')
-    skyMat.uniforms.uBot.value.set('#1a1a3e')
-    stars.visible = true
+    skyUniforms.uNightMode.value = 1.0
     lampLight.intensity = 2
     lampMat.emissiveIntensity = 2
     mainLampLight.intensity = 2
@@ -1010,9 +1387,7 @@ function toggleDayNight() {
       if (c.isAmbientLight) c.intensity = origAmbientIntensity
       if (c.isHemisphereLight) c.intensity = origHemisphereIntensity
     })
-    skyMat.uniforms.uTop.value.set('#7cb7d8')
-    skyMat.uniforms.uBot.value.set('#e8f0d8')
-    stars.visible = false
+    skyUniforms.uNightMode.value = 0.0
     lampLight.intensity = 0
     lampMat.emissiveIntensity = 0
     mainLampLight.intensity = 0
@@ -1023,6 +1398,17 @@ function toggleDayNight() {
 
 document.getElementById('btn-random-shape').addEventListener('click', createRandomShape)
 document.getElementById('btn-daynight').addEventListener('click', toggleDayNight)
+
+// ---- 星轨切换 ----
+let swirlMode = false
+document.getElementById('btn-swirl').addEventListener('click', () => {
+  swirlMode = !swirlMode
+  starUniforms.uSwirlMode.value = swirlMode ? 1.0 : 0.0
+  if (swirlMode) {
+    starUniforms.uTrailTime.value = 0.0
+  }
+  document.getElementById('btn-swirl').textContent = swirlMode ? '🌀 关闭星轨' : '🌀 星轨'
+})
 
 Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
   updateBuildingTransform()
@@ -1060,7 +1446,11 @@ addEventListener('keyup', (e) => {
 
 // ---- 动画 ----
 const moveDir = new THREE.Vector3()
-function animate() {
+renderer.setAnimationLoop(() => {
+  const now = performance.now()
+  const dt = Math.min((now - (lastTime || now)) / 1000, 0.05)
+  lastTime = now
+
   if (keyState.w || keyState.s || keyState.a || keyState.d || keyState.q || keyState.e) {
     moveDir.set(0, 0, 0)
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
@@ -1080,13 +1470,38 @@ function animate() {
   controls.update()
   ocean.position.x = camera.position.x
   ocean.position.z = camera.position.z
+  skyMesh.position.x = camera.position.x
+  skyMesh.position.z = camera.position.z
+  starSphere.position.x = camera.position.x
+  starSphere.position.z = camera.position.z
   oUniforms.uCamXZ.value.set(camera.position.x, camera.position.z)
-  oUniforms.uTime.value += 0.016
-  for (const mixer of animMixers) mixer.update(0.016)
+  oUniforms.uTime.value += dt
+  skyUniforms.uTime.value += dt
+  starUniforms.uTime.value += dt
+  starUniforms.uRotationAngle.value += dt * 0.025 * starUniforms.uSwirlMode.value
+  if (starUniforms.uSwirlMode.value > 0.5) starUniforms.uTrailTime.value += dt
+  starUniforms.uNightMode.value = skyUniforms.uNightMode.value
+  skyUniforms.uSunDir.value.copy(sun.position).normalize()
+  for (const mixer of animMixers) mixer.update(dt)
+  if (trainRunning && !trainPaused) {
+    train.position.x += trainSpeed * dt
+    if (train.position.x > TRAIN_LIMIT) {
+      train.position.x = -TRAIN_LIMIT
+    }
+    sun.target.position.x = train.position.x
+    sun.target.updateMatrixWorld()
+  }
+  // 车厢动画（星光闪烁，始终更新）
+  updateCarriageAnimation(carriageObj, now / 1000)
+  // 展示车厢悬浮旋转
+  displayModels.forEach(({ model }, i) => {
+    model.rotation.y += dt * 0.5
+    model.position.y = Math.sin(now / 1000 * 0.8 + i * 1.2) * 0.15
+  })
   if (snowing) {
     const pos = snowSystem.geometry.attributes.position.array
     for (let i = 0; i < SNOW_COUNT; i++) {
-      pos[i * 3 + 1] -= snowVel[i] * 0.016
+      pos[i * 3 + 1] -= snowVel[i] * dt
       pos[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.008
       pos[i * 3 + 2] += Math.cos(Date.now() * 0.0013 + i * 0.7) * 0.008
       if (pos[i * 3 + 1] < 0) {
@@ -1098,9 +1513,7 @@ function animate() {
     snowSystem.geometry.attributes.position.needsUpdate = true
   }
   renderer.render(scene, camera)
-  requestAnimationFrame(animate)
-}
-animate()
+})
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight

@@ -1,0 +1,106 @@
+% ===============================================================
+% A4单页项目计划书 LaTeX 模板
+% 强烈推荐使用 XeLaTeX 编译器进行编译以获得最佳中文支持
+% ===============================================================
+
+\documentclass[a4paper, 12pt]{article}
+
+% --- 1. 导言区 (Preamble) ---
+\usepackage{ctex}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage[left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}[\titlerule]
+
+\newcommand{\projectitem}[1]{\item \textbf{#1}:}
+
+% --- 2. 文档信息 ---
+\title{\bfseries 项目计划书}
+\author{}
+\date{}
+
+% --- 3. 文档正文 ---
+\begin{document}
+
+\begin{center}
+    {\Huge\bfseries 项目计划书}
+    \vspace{1cm}
+\end{center}
+
+% --- 项目基本信息 ---
+\section*{项目基本信息}
+
+\begin{itemize}
+    \projectitem{项目名称}
+    夏日海上列车 —— 网页互动叙事游戏
+
+    \projectitem{项目口号}
+    乘着海风，驶入一段奇幻旅程
+
+    \projectitem{项目成员}
+    \begin{itemize}
+        \item 马骏逸 (组长): 负责项目管理、Three.js场景搭建与核心交互开发，以及各系统开发。
+        \item 黎佳易 (组员): 负责模型、动画，UI/UX设计与场景美术优化
+    \end{itemize}
+\end{itemize}
+
+% --- 项目简介 ---
+\section*{项目简介}
+
+本项目是一款基于浏览器的3D互动叙事游戏。玩家将置身于一列行驶在无垠海面上的列车中，视角与列车同步向前，沿途邂逅风格各异的海洋生物与神秘角色，触发随机或固定剧情事件，并与之互动。游戏以"旅途"为核心体验，强调沉浸感、发现感与情感共鸣，旨在用轻量的网页技术承载一段富有诗意的微型冒险。
+
+% --- 核心技术点 ---
+\section*{核心技术点}
+
+\begin{itemize}
+    \projectitem{前端框架与3D引擎}
+    采用 \textbf{Three.js} 作为核心渲染引擎，搭配 \textbf{Vite} 构建工具，实现轻量化、热重载的开发流程。
+
+    \projectitem{轨道与列车系统}
+    \begin{itemize}
+        \item 使用CatmullRom曲线等预设海上轨道，列车沿曲线匀速行进。
+        \item 相机绑定列车位置，同时保留可旋转视角让玩家环顾四周。
+    \end{itemize}
+
+    \projectitem{海洋渲染}
+    \begin{itemize}
+        \item \textbf{自定义着色器 (GLSL)}: 基于Voronoi F1 - SmoothF1边缘检测的动漫风格海面，呈现宫崎骏式的色块化波浪。
+        \item \textbf{多层波浪系统}: 正弦波叠加 + 顶点位移，模拟柔和起伏的海面动态。
+        \item \textbf{距离淡出}: 海面随视距渐变透明，营造无限海洋的视觉感受。
+    \end{itemize}
+
+    \projectitem{角色与生物系统}
+    \begin{itemize}
+        \item 使用 GLTF 格式导入动画角色和生物模型，支持骨骼动画混合。
+        \item 生物随列车行进出现，部分生物可与列车同行。
+    \end{itemize}
+
+    \projectitem{事件与剧情系统}
+    \begin{itemize}
+        \item 基于路点触发：列车到达特定坐标时自动触发剧情事件。
+        \item 分支对话：玩家选择影响后续剧情走向，支持简单状态机管理剧情状态。
+    \end{itemize}
+
+    \projectitem{视觉与特效}
+    \begin{itemize}
+        \item \textbf{粒子系统}: 用于海浪水花、黄昏萤火等氛围效果。
+        \item \textbf{昼夜循环}: 动态切换天空颜色、光照强度与方向，实现从日出到星夜的完整旅程。
+        \item \textbf{风格化着色}: 结合色带（ColorRamp）与边缘光效，打造吉卜力风格的视觉语言。
+    \end{itemize}
+
+    \projectitem{性能优化}
+    \begin{itemize}
+        \item 模型使用Draco压缩，控制面数在移动端可接受范围。
+        \item InstancedMesh用于重复物体，降低Draw Call。
+        \item LOD系统：远处生物使用简化模型或Billboard代替。
+    \end{itemize}
+\end{itemize}
+
+\vspace{2cm}
+
+\begin{flushright}
+    \textbf{计划制定日期:} \today
+\end{flushright}
+
+\end{document}
