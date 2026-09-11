@@ -65,6 +65,18 @@ window.scene = scene; window.camera = camera; window.renderer = renderer; window
 const editor = SceneEditor.autoAttach({ storageKey: 'my-app:layout' })
 ```
 
+**方式 0（最简，面向不熟悉代码的人，推荐）**：宿主入口文件只加**一行**
+
+```js
+import './scene-editor-autoload.js'
+```
+
+`scene-editor-autoload.js` 会在首次渲染时自动捕获 `scene / camera / renderer`（并尽力捕获 `OrbitControls`），无需手动传任何引用；可通过 `window.__sceneEditorOptions` 传配置，实例挂在 `window.__sceneEditor`。
+
+实现要点：three 的 `WebGLRenderer.render` 是**实例属性**（构造函数里 `this.render = ...`），不是原型方法，所以采用在 `WebGLRenderer.prototype` 上定义 `render` 的 getter/setter，借构造函数赋值时把实例钩住。
+
+**一键安装包（面向不熟悉代码的人）**：`scene-editor-kit/` 内含 `scene-editor.js`、`scene-editor-autoload.js` 与安装器。对方把整个文件夹放进项目后，双击 `安装场景编辑器.cmd`（Windows）/ `install-scene-editor.command`（macOS）即可自动：向上定位项目根 → 找到含 `new THREE.WebGLRenderer` 的入口文件 → 复制两个 `.js` 到入口同目录 → 在入口顶部插入 `import './scene-editor-autoload.js'`。安装器可重复运行（幂等）。kit 内的编辑器源码由 `npm run kit`（`tools/build-editor-kit.mjs`）从 `src/` 同步，避免两份源码漂移。
+
 ## 4. 接入契约（公共 API）
 
 编辑器通过一个对象对外暴露能力。所有方法都返回 `this` 或明确结果，便于链式调用。

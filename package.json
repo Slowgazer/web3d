@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "kit": "node tools/build-editor-kit.mjs"
   },
   "dependencies": {
     "lil-gui": "^0.21.0",

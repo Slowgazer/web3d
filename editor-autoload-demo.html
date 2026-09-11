@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>场景编辑器 · 一行接入演示</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #20242c; }
+    #hint { position: fixed; top: 8px; right: 10px; z-index: 10; color: #9aa4b2;
+      font: 12px system-ui, "Microsoft YaHei", sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="hint">本页只 import 了一行 autoload —— 按 Tab 编辑</div>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+    // ⬇⬇⬇ 接入的全部：就这一行 ⬇⬇⬇
+    import './src/scene-editor-autoload.js'
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#2a3038')
+
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500)
+    camera.position.set(8, 6, 10)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    renderer.shadowMap.enabled = true
+    document.body.appendChild(renderer.domElement)
+
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.target.set(0, 1, 0)
+
+    scene.add(new THREE.AmbientLight('#ffffff', 0.7))
+    const sun = new THREE.DirectionalLight('#fff2dd', 2.2)
+    sun.position.set(12, 18, 8)
+    sun.castShadow = true
+    scene.add(sun)
+
+    function makeBox(color, x, z, y = 0.5, s = 1) {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(s, s, s),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.6 }),
+      )
+      m.position.set(x, y, z)
+      m.castShadow = true; m.receiveShadow = true
+      scene.add(m)
+      return m
+    }
+
+    // 三个"整体"资产（这里用简单方盒代表导入的模型）
+    const a = makeBox('#c98a5a', -3, 0)
+    a.name = '红色小屋'
+    const b = makeBox('#5a8ac9', 0, 0, 1, 1.4)
+    b.name = '蓝色立方'
+    const c = makeBox('#5ac98a', 3, 0)
+    c.name = '绿色小屋'
+
+    renderer.setAnimationLoop(() => {
+      controls.update()
+      renderer.render(scene, camera)
+    })
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(innerWidth, innerHeight)
+    })
+
+    window.__ctx = { scene, camera, renderer, controls }
+  </script>
+</body>
+</html>
