@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>场景编辑器 · 演示</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #20242c; }
+    #hint { position: fixed; top: 8px; right: 10px; z-index: 10; color: #9aa4b2;
+      font: 12px system-ui, "Microsoft YaHei", sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="hint">按 Tab 进入编辑模式</div>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+    import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+    import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js'
+    import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+    import { SceneEditor } from './src/scene-editor.js'
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#2a3038')
+    scene.fog = new THREE.Fog('#2a3038', 40, 120)
+
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500)
+    camera.position.set(8, 6, 10)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    document.body.appendChild(renderer.domElement)
+
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.target.set(0, 1, 0)
+
+    scene.add(new THREE.AmbientLight('#ffffff', 0.6))
+    scene.add(new THREE.HemisphereLight('#bcd8ff', '#4a4030', 0.7))
+    const sun = new THREE.DirectionalLight('#fff2dd', 2.2)
+    sun.position.set(12, 18, 8)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.camera.left = -30
+    sun.shadow.camera.right = 30
+    sun.shadow.camera.top = 30
+    sun.shadow.camera.bottom = -30
+    scene.add(sun)
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.MeshStandardMaterial({ color: '#4a5560', roughness: 1 }),
+    )
+    ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
+    scene.add(ground)
+
+    function loadOBJ(obj, mtl, targetHeight) {
+      return new Promise((res, rej) => {
+        new MTLLoader().load(mtl, (mats) => {
+          mats.preload()
+          new OBJLoader().setMaterials(mats).load(obj, (o) => {
+            o.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true } })
+            const box = new THREE.Box3().setFromObject(o)
+            const size = new THREE.Vector3(); box.getSize(size)
+            const f = targetHeight / Math.max(size.x, size.y, size.z)
+            o.scale.setScalar(f)
+            res(o)
+          }, undefined, rej)
+        }, undefined, rej)
+      })
+    }
+
+    function loadFBX(path, targetHeight) {
+      return new Promise((res, rej) => {
+        new FBXLoader().load(path, (o) => {
+          o.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true } })
+          const box = new THREE.Box3().setFromObject(o)
+          const size = new THREE.Vector3(); box.getSize(size)
+          const f = targetHeight / Math.max(size.x, size.y, size.z)
+          o.scale.setScalar(f)
+          res(o)
+        }, undefined, rej)
+      })
+    }
+
+    async function main() {
+      const [train, car, building] = await Promise.all([
+        loadOBJ('/models/Train/Train_1392.obj', '/models/Train/Train_1392.mtl', 3),
+        loadOBJ('/models/VR-Mobil/model.obj', '/models/VR-Mobil/materials.mtl', 2),
+        loadFBX('/models/Building/building_A.fbx', 3),
+      ])
+      train.name = '火车'
+      car.name = '汽车'
+      building.name = '建筑'
+      train.position.set(-4, 0, 0)
+      car.position.set(1, 0, 2)
+      building.position.set(4, 0, -1)
+      scene.add(train, car, building)
+
+      const combo = new THREE.Group()
+      combo.name = '组合小屋'
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6, 1.2, 1.4),
+        new THREE.MeshStandardMaterial({ color: '#c98a5a', roughness: 0.8 }),
+      )
+      body.position.y = 0.6
+      const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(1.3, 0.9, 4),
+        new THREE.MeshStandardMaterial({ color: '#8a4a3a', roughness: 0.8 }),
+      )
+      roof.position.y = 1.65
+      roof.rotation.y = Math.PI / 4
+      combo.add(body, roof)
+      combo.position.set(0, 0, -3)
+      body.castShadow = roof.castShadow = true
+      scene.add(combo)
+
+      const editor = new SceneEditor({
+        scene, camera, renderer, controls,
+        autoScan: false,
+        storageKey: 'scene-editor-demo:layout',
+      })
+      editor.ignore(ground)
+      editor.markAsAsset(train, { id: 'train', name: '火车' })
+      editor.markAsAsset(car, { id: 'car', name: '汽车' })
+      editor.markAsAsset(building, { id: 'building', name: '建筑' })
+      editor.markAsAsset(combo, { id: 'combo_hut', name: '组合小屋' })
+      editor.scan()
+
+      window.__editor = editor
+      window.__THREE = THREE
+      window.__SceneEditor = SceneEditor
+      window.__ctx = { scene, camera, renderer, controls }
+      window.__ready = true
+    }
+
+    main().catch((err) => {
+      console.error(err)
+      window.__error = String(err && err.stack || err)
+    })
+
+    function loop() {
+      requestAnimationFrame(loop)
+      controls.update()
+      renderer.render(scene, camera)
+    }
+    loop()
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(innerWidth, innerHeight)
+    })
+  </script>
+</body>
+</html>

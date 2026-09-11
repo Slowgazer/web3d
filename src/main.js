@@ -11,6 +11,7 @@ import {
   createCarriage, updateCarriageAnimation,
   createBlackCatDisplay, createStarryDisplay, createVintageDisplay, createOceanDisplay,
 } from './carriage.js'
+import { SceneEditor } from './scene-editor.js'
 
 const SUNFLOWER_PATH = '/models/Sunflower/PUSHILIN_sunflower.obj'
 const SUNFLOWER_MTL = '/models/Sunflower/PUSHILIN_sunflower.mtl'
@@ -1214,6 +1215,7 @@ function createRandomShape() {
   mesh.userData.origScale = 1
   scene.add(mesh)
   shapeMeshes.push(mesh)
+  window.__sceneEditor?.scan()
 }
 
 // 所有可选中物体
@@ -1227,10 +1229,12 @@ const pointer = new THREE.Vector2()
 const colorPicker = document.getElementById('color-picker')
 const colorInput = document.getElementById('shape-color-input')
 renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (window.__sceneEditor?.editMode) return
   pointer.x = (e.clientX / innerWidth) * 2 - 1
   pointer.y = -(e.clientY / innerHeight) * 2 + 1
 })
 renderer.domElement.addEventListener('pointerup', (e) => {
+  if (window.__sceneEditor?.editMode) return
   const dx = (e.clientX / innerWidth) * 2 - 1 - pointer.x
   const dy = -(e.clientY / innerHeight) * 2 + 1 - pointer.y
   if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) return
@@ -1414,12 +1418,37 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
   updateBuildingTransform()
   updateCarTransform()
   console.log('✅ 场景加载完成')
+
+  // ---- 场景编辑器（按 Tab 进入编辑模式）----
+  // 通过 autoAttach 自动获取 scene/camera/renderer/controls（挂在 window 上）
+  window.scene = scene
+  window.camera = camera
+  window.renderer = renderer
+  window.controls = controls
+  const editor = SceneEditor.autoAttach({ autoScan: false, storageKey: 'web3d:game-layout' })
+  if (editor) {
+    // 环境 / 特效不作为可编辑资产
+    ;[grassMesh, skyMesh, starSphere, ocean, railbed, axes, controller1, controller2, grip1, grip2]
+      .forEach((o) => o && editor.ignore(o))
+    // 显式登记「整体」资产（导入模型 / 代码生成的组合）
+    editor.register(train, { id: 'train', name: '列车' })
+    editor.register(displayGroup, { id: 'display', name: '展示车厢' })
+    if (building) editor.register(building, { id: 'building', name: '建筑' })
+    if (car) editor.register(car, { id: 'car', name: '汽车' })
+    editor.register(flowerGroup, { id: 'flowers', name: '花丛' })
+    editor.register(pathGroup, { id: 'path', name: '土路' })
+    editor.register(cloudGroup, { id: 'clouds', name: '云' })
+    // 兜底：识别其余非忽略的整体（灯、小屋场景、随机形状等）
+    editor.scan()
+    console.log('🎛 场景编辑器就绪：按 Tab 进入编辑模式')
+  }
 }).catch((err) => console.error('加载失败:', err))
 
 // ---- WASD 移动视角 ----
 const keyState = { w: false, a: false, s: false, d: false, q: false, e: false }
 const moveSpeed = 0.25
 addEventListener('keydown', (e) => {
+  if (window.__sceneEditor?.editMode) return
   if (e.key === 'z' || e.key === 'Z') {
     e.preventDefault()
     gui.domElement.style.display = gui.domElement.style.display === 'none' ? '' : 'none'
@@ -1434,6 +1463,7 @@ addEventListener('keydown', (e) => {
   }
 })
 addEventListener('keyup', (e) => {
+  if (window.__sceneEditor?.editMode) return
   switch (e.key.toLowerCase()) {
     case 'w': keyState.w = false; break
     case 'a': keyState.a = false; break
@@ -1451,7 +1481,7 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min((now - (lastTime || now)) / 1000, 0.05)
   lastTime = now
 
-  if (keyState.w || keyState.s || keyState.a || keyState.d || keyState.q || keyState.e) {
+  if (!window.__sceneEditor?.editMode && (keyState.w || keyState.s || keyState.a || keyState.d || keyState.q || keyState.e)) {
     moveDir.set(0, 0, 0)
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
     forward.y = 0; forward.normalize()
