@@ -40,7 +40,30 @@ function findProjectRoot(start) {
     if (up === dir) break
     dir = up
   }
-  return null
+  dir = start
+  for (let i = 0; i < 12; i++) {
+    if (existsSync(join(dir, 'index.html')) || existsSync(join(dir, MANIFEST))
+      || existsSync(join(dir, 'vite.config.js')) || existsSync(join(dir, 'vite.config.ts'))) return dir
+    const up = dirname(dir)
+    if (up === dir) break
+    dir = up
+  }
+  const stack = [start]
+  let guard = 0
+  let fallback = null
+  while (stack.length && guard++ < 20000) {
+    const d = stack.pop()
+    let entries
+    try { entries = readdirSync(d, { withFileTypes: true }) } catch { continue }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name === 'node_modules' || e.name.startsWith('.')) continue
+      const p = join(d, e.name)
+      if (readPkg(p)) return p
+      if (!fallback && existsSync(join(p, 'index.html'))) fallback = p
+      stack.push(p)
+    }
+  }
+  return fallback
 }
 function findManifest(start, root) {
   const candidates = []

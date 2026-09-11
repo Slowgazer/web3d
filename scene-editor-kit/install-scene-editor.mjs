@@ -48,6 +48,15 @@ function findProjectRoot(start) {
     if (up === dir) break
     dir = up
   }
+  // 向上找 Web 项目标记
+  dir = start
+  for (let i = 0; i < 12; i++) {
+    if (existsSync(join(dir, 'index.html')) || existsSync(join(dir, 'vite.config.js'))
+      || existsSync(join(dir, 'vite.config.ts')) || existsSync(join(dir, MANIFEST))) return dir
+    const up = dirname(dir)
+    if (up === dir) break
+    dir = up
+  }
   const found = []
   const stack = [start]
   let guard = 0
