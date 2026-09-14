@@ -1,14 +1,14 @@
 // ============================================================================
 // 剧情流程：
-//   开场黑屏 → 列车员对白 → 选项 → 选车厢 → 倒计时 → 球形揭示发车
-//   → 一直向前行驶（不再回头、不再抵达某处）
+//   开场黑屏 → 列车员对白(P5R 动态对话框) → 选项 → 选车厢(点击展开试听/再点确认)
+//   → 倒计时 → 球形揭示 → 轨道缓慢浮起就位 → 列车缓慢启动
 //   → 蓝天/黄昏/夜晚(星环)/回到蓝天 循环
-//   相机：位置跟随车厢，角度完全交给鼠标（OrbitControls）
+//   海面：白天几乎不透明且鲜艳，黄昏/夜晚回到半透明，切换时缓慢过渡
 // ============================================================================
-import './vn-dialog.css'
 import './story.css'
+import './p5r-dialog.css'
 import * as THREE from 'three'
-import { VNDialogue } from './vn-dialog.js'
+import { P5RDialogue } from './p5r-dialog.js'
 
 const CARRIAGES = [
   { id: 'summer', name: '夏日幻想', song: '夏日肖像', swatch: '#e0a94a', audio: '/audio/summer.m4a' },
@@ -45,6 +45,40 @@ function tween(dur, fn) {
   })
 }
 
+// 海面：白天几乎不透明且鲜艳；黄昏 / 夜晚回到半透明
+const OCEAN_DAY = {
+  deep: new THREE.Color('#1f6fd0'), mid: new THREE.Color('#3ab7f0'), high: new THREE.Color('#ffffff'),
+  opacity: 1.0, deepOpacity: 1.0, wave: 0.12,
+}
+const OCEAN_DUSK = {
+  deep: new THREE.Color('#3a7aa5'), mid: new THREE.Color('#59c0e8'), high: new THREE.Color('#ffffff'),
+  opacity: 1.0, deepOpacity: 0.7, wave: 0.08,
+}
+
+function applyOcean(u, p) {
+  u.uDeepColor.value.copy(p.deep)
+  u.uMidColor.value.copy(p.mid)
+  u.uHighlight.value.copy(p.high)
+  u.uOpacity.value = p.opacity
+  u.uDeepOpacity.value = p.deepOpacity
+  u.uWaveHeight.value = p.wave
+}
+
+function oceanTo(u, to, dur) {
+  const from = {
+    deep: u.uDeepColor.value.clone(), mid: u.uMidColor.value.clone(), high: u.uHighlight.value.clone(),
+    opacity: u.uOpacity.value, deepOpacity: u.uDeepOpacity.value, wave: u.uWaveHeight.value,
+  }
+  return tween(dur, (k) => {
+    u.uDeepColor.value.lerpColors(from.deep, to.deep, k)
+    u.uMidColor.value.lerpColors(from.mid, to.mid, k)
+    u.uHighlight.value.lerpColors(from.high, to.high, k)
+    u.uOpacity.value = lerp(from.opacity, to.opacity, k)
+    u.uDeepOpacity.value = lerp(from.deepOpacity, to.deepOpacity, k)
+    u.uWaveHeight.value = lerp(from.wave, to.wave, k)
+  })
+}
+
 function hideUI(gui) {
   ;['scene-tools', 'demo-links', 'color-picker', 'info'].forEach((id) => {
     const el = document.getElementById(id)
@@ -57,21 +91,30 @@ function hideUI(gui) {
 }
 
 export function initStory(ctx) {
-  const { train, floatingTrack, gui } = ctx
+  const { train, floatingTrack, gui, oUniforms } = ctx
   hideUI(gui)
-  hideOldScene(ctx)       // 原场景不要了
-  floatingTrack.setArmed(false) // 初始没有轨道
+  hideOldScene(ctx)
+  floatingTrack.setArmed(false)
+  if (oUniforms) applyOcean(oUniforms, OCEAN_DAY)
 
+  // 黑屏 + 左侧立绘
   const black = document.createElement('div')
   black.id = 'story-black'
   document.body.appendChild(black)
+  const sprite = document.createElement('img')
+  sprite.id = 'story-sprite'
+  sprite.src = '/ui/conductor.png'
+  sprite.alt = ''
+  document.body.appendChild(sprite)
 
-  const dialog = new VNDialogue({ spriteSrc: '/ui/conductor.png', typeSpeed: 34 })
+  const dialog = new P5RDialogue({ typeSpeed: 34 })
 
   const waitChoice = () => new Promise((res) => { dialog.o.onChoice = (c, i) => res({ c, i }) })
-  const waitComplete = () => new Promise((res) => { dialog.o.onComplete = () => res() })
+  const waitComplete = () => new Promise((res) => { dialog.o.onEnd = () => res() })
 
   async function run() {
+    sprite.classList.add('show')
+
     dialog.play(RULES, { speaker: '列车员' })
     await waitComplete()
 
@@ -82,32 +125,35 @@ export function initStory(ctx) {
 
     dialog.play('接下来，选择你的列车。', { speaker: '列车员' })
     await waitComplete()
-    dialog.close()
+    dialog.hide()
     await wait(400)
 
     const chosen = await showCarriageSelect()
+    ctx.setCarriage?.(chosen.id)   // 立即换成所选车厢
     await startBgm(chosen)
 
     dialog.play('嗯，那么接下来准备发车了。', { speaker: '列车员' })
     await waitComplete()
-    dialog.close()
+    dialog.hide()
     await wait(350)
 
     await countdown(['3', '2', '1'])
     await revealSphere()
-    ctx.setCarriage?.(chosen.id)   // 换成所选车厢的模型
+    sprite.classList.add('show')
 
-    // 先让玩家看清自己的列车、把话说完，再启动
+    // 轨道先缓慢浮起并全部就位，列车再启动（初始不能提前发动）
+    floatingTrack.arm()
+    await wait(5200)
+
+    createDriver(ctx)
+    await wait(600)
+
     dialog.play('（列车在海上跑？）（嗯？路呢？）', { speaker: '我' })
     await waitChoice()
     dialog.play('你会习惯的。；路，一直都在你脚下。', { speaker: '列车员' })
     await waitComplete()
     await wait(600)
-    dialog.close()
-
-    // 缓慢启动 + 轨道从水下缓慢浮起，随后进入正常铺设
-    createDriver(ctx)
-    floatingTrack.arm()
+    dialog.hide()
 
     timeline(ctx)
   }
@@ -115,7 +161,6 @@ export function initStory(ctx) {
   run().catch((e) => console.error('剧情流程出错:', e))
 }
 
-// 原场景整体隐藏（不再展示、不再出现）
 function hideOldScene(ctx) {
   ;(ctx.land || []).forEach((o) => { if (o) o.visible = false })
   if (ctx.displayGroup) ctx.displayGroup.visible = false
@@ -123,7 +168,7 @@ function hideOldScene(ctx) {
   if (ame) ame.visible = false
 }
 
-// ---- 选车厢 ----
+// ---- 选车厢：点击展开并试听；再次点击该选项才算确认 ----
 function showCarriageSelect() {
   return new Promise((resolve) => {
     const panel = document.createElement('div')
@@ -131,24 +176,31 @@ function showCarriageSelect() {
     panel.classList.add('show')
     panel.innerHTML = '<h2>选择你的列车</h2><div class="cs-row"></div>'
     const row = panel.querySelector('.cs-row')
+    let picked = null
     let preview = null
+
     CARRIAGES.forEach((c) => {
       const b = document.createElement('button')
       b.className = 'cs-item'
+      b.dataset.id = c.id
       b.innerHTML = `<span class="swatch" style="background:${c.swatch}"></span>
-        <span>${c.name}</span><span class="song">♪ ${c.song}</span>`
-      b.addEventListener('mouseenter', () => {
-        if (preview) { preview.pause(); preview.currentTime = 0 }
-        preview = new Audio(c.audio)
-        preview.volume = 0.5
-        preview.play().catch(() => {})
-      })
-      b.addEventListener('mouseleave', () => { if (preview) { preview.pause(); preview = null } })
+        <span>${c.name}</span><span class="song">♪ ${c.song}</span>
+        <span class="song" style="opacity:.55">点击试听 · 再点确认</span>`
       b.addEventListener('click', () => {
+        if (picked !== c.id) {
+          // 第一次点击：展开 + 播放
+          picked = c.id
+          row.querySelectorAll('.cs-item').forEach((x) => x.classList.remove('picked'))
+          b.classList.add('picked')
+          if (preview) { preview.pause(); preview.currentTime = 0 }
+          preview = new Audio(c.audio)
+          preview.volume = 0.6
+          preview.play().catch(() => {})
+          return
+        }
+        // 第二次点击：确认
         if (preview) { preview.pause(); preview = null }
-        row.querySelectorAll('.cs-item').forEach((x) => x.classList.remove('picked'))
-        b.classList.add('picked')
-        setTimeout(() => { panel.remove(); resolve(c) }, 320)
+        setTimeout(() => { panel.remove(); resolve(c) }, 260)
       })
       row.appendChild(b)
     })
@@ -186,13 +238,13 @@ async function revealSphere() {
   rev.remove()
 }
 
-// ---- 行驶：一直向前；相机只跟随位置，角度交给鼠标 ----
+// ---- 行驶：缓慢启动；相机只跟随位置，角度交给鼠标 ----
 function createDriver(ctx) {
   const { camera, controls, train, sun } = ctx
   const SPEED_MAX = 15
-  const ACCEL = 2.5               // 缓慢启动：约 6s 加速到全速
-  const camOffset = new THREE.Vector3(8.5, 4.4, 11.5)  // 相机相对车厢的初始偏移（更远一点）
-  const lookOffset = new THREE.Vector3(0, 3.8, 0)      // 视点抬高 → 视线接近水平，天空占更多画面
+  const ACCEL = 2.5
+  const camOffset = new THREE.Vector3(8.5, 4.4, 11.5)
+  const lookOffset = new THREE.Vector3(0, 3.8, 0)
 
   camera.position.copy(train.position).add(camOffset)
   controls.target.copy(train.position).add(lookOffset)
@@ -201,7 +253,7 @@ function createDriver(ctx) {
   let prevX = train.position.x
   let speed = 0
   window.__storyUpdate = (dt) => {
-    speed = Math.min(SPEED_MAX, speed + ACCEL * dt) // 由慢到快
+    speed = Math.min(SPEED_MAX, speed + ACCEL * dt)
     train.position.x += speed * dt
     const dx = train.position.x - prevX
     prevX = train.position.x
@@ -211,22 +263,24 @@ function createDriver(ctx) {
   }
 }
 
-// ---- 时间循环：蓝天 → 黄昏 → 夜(星环) → 蓝天 → … ----
+// ---- 时间循环 + 海面昼夜 ----
 async function timeline(ctx) {
-  const { sky, skyUniforms, starUniforms } = ctx
+  const { sky, skyUniforms, starUniforms, oUniforms } = ctx
   const cov = skyUniforms.uCoverage.value
 
   for (;;) {
-    await wait(12000)                       // 蓝天行驶
-    sky.setPreset('dusk', true, 7)          // → 黄昏（长过渡，云继续流动）
+    await wait(12000)                       // 蓝天（海面：鲜艳不透明）
+    sky.setPreset('dusk', true, 7)
+    if (oUniforms) oceanTo(oUniforms, OCEAN_DUSK, 7)   // 海面同步变回半透明
     await wait(12000)
-    await tween(3.5, (k) => { skyUniforms.uCoverage.value = lerp(cov, 0, k) }) // 云淡出
-    await tween(5, (k) => { skyUniforms.uNightMode.value = k })               // 变暗
-    starUniforms.uSwirlMode.value = 1       // 星环
+    await tween(3.5, (k) => { skyUniforms.uCoverage.value = lerp(cov, 0, k) })
+    await tween(5, (k) => { skyUniforms.uNightMode.value = k })
+    starUniforms.uSwirlMode.value = 1
     starUniforms.uTrailTime.value = 0
     await wait(10000)
     starUniforms.uSwirlMode.value = 0
-    sky.setPreset('summer', true, 6)        // → 回到蓝天
+    sky.setPreset('summer', true, 6)
+    if (oUniforms) oceanTo(oUniforms, OCEAN_DAY, 6)    // 回到白天，海面再变鲜艳
     await tween(6, (k) => {
       skyUniforms.uNightMode.value = 1 - k
       skyUniforms.uCoverage.value = lerp(0, cov, k)

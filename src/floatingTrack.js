@@ -11,12 +11,12 @@ import * as THREE from 'three'
 import { createRailwayTrackSegmentModel } from './createTrackModel'
 
 const SEG_LEN = 4        // 单段长度（与模型一致）
-const POOL = 24          // 对象池段数（需覆盖 前导 + 保持 + 下沉 的总跨度）
-const LEAD = 52          // 车头前方多远开始浮起（越长越慢越丝滑）
+const POOL = 26          // 对象池段数（需覆盖 前导 + 保持 + 下沉 的总跨度）
+const LEAD = 60          // 车头前方多远开始浮起（越长越慢越丝滑）
 const APPEAR_END = 16    // 到这个距离已完全就位（越大 = 越早、越远就位）
 const KEEP_BEHIND = 24   // 车尾后方保持就位的距离
 const FALL = 14          // 之后下沉的距离
-const SUBMERGE = 4.2     // 从水下多深处浮起来（越深，出现得越晚、越含蓄）
+const SUBMERGE = 6.5     // 从水下多深处浮起来（越深，出现得越晚、越含蓄）
 const UP_Y = 0.09        // 就位高度（使模型轨面与列车对齐）
 
 const easeOutQuad = (x) => 1 - (1 - x) * (1 - x) // 匀减速

@@ -12,6 +12,25 @@
 }
 #story-black.out { opacity: 0; }
 
+/* 左侧立绘：底部贴屏幕底 */
+#story-sprite {
+  position: fixed;
+  left: 3.5vw;
+  bottom: 0;
+  height: min(78vh, 68vw);
+  max-height: 82vh;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  filter: drop-shadow(0 -6px 20px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+  z-index: 91;
+}
+#story-sprite.show { opacity: 1; transform: translateY(0); }
+
+/* 对话框略小于演示页；层级要高于开场黑屏(85) */
+.p5r-dialog { width: min(820px, 80vw) !important; z-index: 92 !important; }
+
 /* 球形揭示：中心透明孔逐渐扩大，场景像从球心展开 */
 #story-reveal {
   position: fixed;
@@ -55,7 +74,7 @@
 }
 .cs-item {
   width: 150px;
-  height: 132px;
+  height: 196px;
   background: rgba(20, 24, 38, 0.9);
   border: 2px solid rgba(246, 239, 220, 0.35);
   border-radius: 2px;
@@ -68,8 +87,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  transition: transform 0.12s, border-color 0.15s, background 0.15s;
+  gap: 12px;
+  transition: transform 0.16s, border-color 0.15s, background 0.15s, height 0.16s;
   clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
   padding: 0 12px;
   text-align: center;

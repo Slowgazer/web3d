@@ -66,8 +66,36 @@
 }
 /* 网点（halftone），P5 的漫画质感。fill 在 JS 里以属性写死 url(#p5r-dots)，
    避免外部 CSS 中 url(#id) 被按样式表路径解析而导致失效 */
-.p5r-halftone {
-  opacity: 0.26;
+.p5r-text .red { color: #ff6b6b; }
+
+/* 网点（halftone） */
+.p5r-halftone { opacity: 0.26; }
+
+/* ---- 选项 ---- */
+.p5r-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.p5r-choice {
+  pointer-events: auto;
+  text-align: left;
+  background: rgba(28, 33, 50, 0.95);
+  color: var(--p5-panel);
+  border: 2px solid var(--p5-accent);
+  border-radius: 2px;
+  padding: 10px 18px;
+  font-size: clamp(14px, 1.8vw, 20px);
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.p5r-choice:hover {
+  background: var(--p5-accent);
+  color: #fff;
+  transform: translateX(4px);
 }
 
 /* ---- 文本内容层 ---- */

@@ -23,6 +23,9 @@ const DEFAULTS = {
   onEnd: null,        // 全部台词播完的回调
 }
 
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ESC[c])
+
 export class P5RDialogue {
   constructor(options = {}) {
     this.o = { ...DEFAULTS, ...options }
@@ -66,6 +69,7 @@ export class P5RDialogue {
         <div class="p5r-content">
           <div class="p5r-name"><span></span></div>
           <div class="p5r-text"></div>
+          <div class="p5r-choices" id="p5r-choices" style="display:none"></div>
           <div class="p5r-next" aria-hidden="true"></div>
         </div>
       </div>`
@@ -77,14 +81,32 @@ export class P5RDialogue {
     this.$name = this.el.querySelector('.p5r-name')
     this.$nameText = this.el.querySelector('.p5r-name span')
     this.$text = this.el.querySelector('.p5r-text')
+    this.$choices = this.el.querySelector('#p5r-choices')
 
     // 组件自带点击推进：这样接到任何页面都能用，无需外部再绑事件
     if (this.o.clickToAdvance) {
       this.el.addEventListener('click', (e) => {
         e.stopPropagation() // 避免与外层「点击任意处推进」重复触发
-        this.next()
+        if (this.$choices && this.$choices.style.display !== 'none') return
+        this.advance()
       })
     }
+    // 空格 / 回车推进
+    this._onKey = (e) => {
+      if (e.code !== 'Space' && e.code !== 'Enter') return
+      if (this.el.classList.contains('is-hidden')) return
+      if (this.$choices && this.$choices.style.display !== 'none') {
+        // 选项页：回车选第一个
+        if (e.code === 'Enter') {
+          const first = this.$choices.querySelector('.p5r-choice')
+          if (first) { e.preventDefault(); first.click() }
+        }
+        return
+      }
+      e.preventDefault()
+      this.advance()
+    }
+    window.addEventListener('keydown', this._onKey)
   }
 
   // ---- 计算基础轮廓点（带外法线，供逐帧形变） ----
@@ -182,16 +204,53 @@ export class P5RDialogue {
     this.$body.setAttribute('d', this._path(pts, 0, 0))
   }
 
+  // ---- 标记解析：； 分页 / “” 红字 / （） 选项 ----
+  _toChars(text) {
+    const out = []
+    let red = false
+    for (const ch of String(text)) {
+      if (ch === '“') { red = true; continue }
+      if (ch === '”') { red = false; continue }
+      out.push({ ch, red })
+    }
+    return out
+  }
+
+  _htmlOf(chars, n) {
+    let html = ''
+    let open = false
+    for (let i = 0; i < Math.min(n, chars.length); i++) {
+      const c = chars[i]
+      if (c.red && !open) { html += '<span class="red">'; open = true }
+      else if (!c.red && open) { html += '</span>'; open = false }
+      html += esc(c.ch)
+    }
+    if (open) html += '</span>'
+    return html
+  }
+
+  parsePages(raw) {
+    const pages = []
+    for (let seg of String(raw).split('；')) {
+      seg = seg.trim()
+      if (!seg) continue
+      const choices = [...seg.matchAll(/（([^）]*)）/g)].map((m) => m[1].trim())
+      if (choices.length) pages.push({ type: 'choice', choices })
+      else pages.push({ type: 'text', text: seg })
+    }
+    return pages
+  }
+
   // ---- 打字机 ----
   _typeTick(dt) {
     if (!this._typing) return
     this._acc += dt * this.o.typeSpeed
-    const n = Math.min(this._fullText.length, Math.floor(this._acc))
+    const n = Math.min(this._charsArr.length, Math.floor(this._acc))
     if (n !== this._shown) {
       this._shown = n
-      this.$text.textContent = this._fullText.slice(0, n)
+      this.$text.innerHTML = this._htmlOf(this._charsArr, n)
     }
-    if (n >= this._fullText.length) {
+    if (n >= this._charsArr.length) {
       this._typing = false
       this.el.classList.remove('is-typing')
       this.el.classList.add('is-ready')
@@ -200,18 +259,54 @@ export class P5RDialogue {
 
   _finishTyping() {
     this._typing = false
-    this._shown = this._fullText.length
-    this.$text.textContent = this._fullText
+    this._shown = this._charsArr.length
+    this.$text.innerHTML = this._htmlOf(this._charsArr, this._shown)
     this.el.classList.remove('is-typing')
     this.el.classList.add('is-ready')
+  }
+
+  _setSpeaker(name) {
+    if (name) { this.$name.style.display = ''; this.$nameText.textContent = name }
+    else this.$name.style.display = 'none'
+  }
+
+  _showPage(page) {
+    this.el.classList.remove('is-ready')
+    if (this.$choices) { this.$choices.style.display = 'none'; this.$choices.innerHTML = '' }
+    if (page.type === 'choice') {
+      this._typing = false
+      this.$text.innerHTML = ''
+      if (this.$choices) {
+        this.$choices.style.display = 'flex'
+        page.choices.forEach((c, idx) => {
+          const b = document.createElement('button')
+          b.className = 'p5r-choice'
+          b.textContent = c
+          b.addEventListener('click', (e) => {
+            e.stopPropagation()
+            this.$choices.style.display = 'none'
+            this.$choices.innerHTML = ''
+            this.o.onChoice?.(c, idx)
+          })
+          this.$choices.appendChild(b)
+        })
+      }
+      return
+    }
+    this._setSpeaker(page.name ?? this.o.defaultName)
+    this._charsArr = this._toChars(page.text || '')
+    this._shown = 0
+    this._acc = 0
+    this._typing = true
+    this.el.classList.add('is-typing')
+    this.$text.innerHTML = ''
   }
 
   // ---- 对外 API ----
   /** 显示一组台词。lines: [{ name?, text }] 或字符串 */
   show(lines) {
-    this._queue = Array.isArray(lines)
-      ? lines
-      : [{ text: String(lines) }]
+    this._queue = (Array.isArray(lines) ? lines : [{ text: String(lines) }])
+      .map((l) => ({ type: 'text', text: l.text ?? String(l), name: l.name }))
     this._index = -1
     this.el.classList.remove('is-hidden')
     this.el.classList.add('is-open')
@@ -219,38 +314,30 @@ export class P5RDialogue {
     return this
   }
 
+  /** 播放带标记的脚本：；分句 / “”红字 / （）选项 */
+  play(raw, { speaker } = {}) {
+    this._queue = this.parsePages(raw)
+    if (speaker !== undefined) this.o.defaultName = speaker
+    this._index = -1
+    this.el.classList.remove('is-hidden')
+    this.el.classList.add('is-open')
+    this.next()
+    return this
+  }
+
+  advance() { this.next() }
+
   /** 推进：打字中 → 立即显示全文；否则进入下一句，播完自动隐藏 */
   next() {
     if (this._typing) { this._finishTyping(); return }
-    if (this._index >= this._queue.length - 1 && this._fullText) {
-      // 已经是最后一句且已显示完
-      this.hide()
-      this.o.onEnd?.()
-      return
-    }
     this._index++
     if (this._index < 0 || this._index >= this._queue.length) {
       this.hide()
       this.o.onEnd?.()
       return
     }
-    this._kick = 1 // 推进时给边缘一次冲击
-    this.el.classList.remove('is-ready')
-    this.el.classList.add('is-typing')
-
-    const line = this._queue[this._index]
-    const name = line.name ?? this.o.defaultName
-    if (name) {
-      this.$name.style.display = ''
-      this.$nameText.textContent = name
-    } else {
-      this.$name.style.display = 'none'
-    }
-    this._fullText = line.text ?? ''
-    this._shown = 0
-    this._acc = 0
-    this._typing = true
-    this.$text.textContent = ''
+    this._kick = 1
+    this._showPage(this._queue[this._index])
   }
 
   hide() {
@@ -260,6 +347,7 @@ export class P5RDialogue {
 
   destroy() {
     cancelAnimationFrame(this._raf)
+    window.removeEventListener('keydown', this._onKey)
     this.el.remove()
   }
 }

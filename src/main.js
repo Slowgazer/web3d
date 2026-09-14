@@ -16,6 +16,12 @@ import { createGhibliSky } from './sky.js'
 import { createFloatingTrack } from './floatingTrack.js'
 import { initStory } from './story.js'
 
+// 游戏模式：加载阶段就把调试 UI 隐藏掉（工具条 / 演示链接 / 颜色选择）
+for (const id of ['scene-tools', 'demo-links', 'color-picker', 'info']) {
+  const el = document.getElementById(id)
+  if (el) el.style.display = 'none'
+}
+
 const SUNFLOWER_PATH = '/models/Sunflower/PUSHILIN_sunflower.obj'
 const SUNFLOWER_MTL = '/models/Sunflower/PUSHILIN_sunflower.mtl'
 const MARIGOLD_PATH = '/models/DesertMarigold/DesertMarigold.obj'
@@ -128,7 +134,9 @@ renderer.toneMappingExposure = 1.2
 document.body.appendChild(renderer.domElement)
 
 renderer.xr.enabled = true
-document.body.appendChild(VRButton.createButton(renderer))
+const vrButton = VRButton.createButton(renderer)
+vrButton.style.display = 'none' // 游戏模式：默认隐藏
+document.body.appendChild(vrButton)
 
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true; controls.dampingFactor = 0.08
@@ -981,6 +989,7 @@ trees.forEach(([x, z, s]) => distTree(x, z, s))
 
 // ---- GUI ----
 const gui = new GUI({ title: '🌼 场景控制' })
+gui.domElement.style.display = 'none' // 游戏模式：隐藏面板
 
 const ff = gui.addFolder('🌻 花海')
 ff.add(state, 'flowerDensity', 0, 250, 1).name('花朵数量').onChange((v) => { updateFlowerDensity(v); saveState() })
@@ -1393,6 +1402,7 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
   window.controls = controls
   window.__THREE = THREE
   window.__train = train
+  window.__ocean = oUniforms
   const editor = SceneEditor.autoAttach({ autoScan: false, storageKey: 'web3d:game-layout' })
   if (editor) {
     // 环境 / 特效不作为可编辑资产
@@ -1421,7 +1431,7 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
     window.__ready = true
     // 启动剧情流程（开场对话 / 选车厢 / 发车等）
     initStory({
-      scene, camera, renderer, controls, sun, sky, skyUniforms, starUniforms,
+      scene, camera, renderer, controls, sun, sky, skyUniforms, starUniforms, oUniforms,
       train, setCarriage, floatingTrack, displayGroup, gui,
       land: [grassMesh, distScene, pathGroup, flowerGroup, axes,
              mainLampPole, mainLampCube, mainLampTop, building, car],

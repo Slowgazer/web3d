@@ -24,6 +24,8 @@ export function createCarriageModelById(id) {
   const factory = CARRIAGE_FACTORY[id] || createSummerCaravanModel
   const model = factory({ qualityPriority: 'gameplay', castShadow: true, receiveShadow: true })
   model.scale.set(1.5, 1.5, 1.5)
+  // 个别车厢模型朝向相反（车头朝 -X），转正
+  if (id === 'blackcat') model.rotation.y = Math.PI
   return model
 }
 
