@@ -63,6 +63,7 @@ export function createFloatingTrack(scene, options = {}) {
 
   // 未「arm」时全部沉在水下不可见 —— 用于开场「初始没有轨道」
   let armed = false
+  let startRamp = 1 // 发车起步时从 0 缓慢升到 1：整段轨道一起从水下浮起
 
   // 一段 = 一个固定世界槽位
   const segments = []
@@ -75,8 +76,10 @@ export function createFloatingTrack(scene, options = {}) {
 
   // 铺满 [trainX - (KEEP+FALL) - 余量, trainX + LEAD]，对齐到 4m 全局网格以便无缝拼接
   let prevTrainX = null
-  function seed(trainX) {
-    const startX = Math.ceil((trainX - KEEP_BEHIND - FALL - SEG_LEN) / SEG_LEN) * SEG_LEN
+  function seed(trainX, startXOverride) {
+    const startX = startXOverride != null
+      ? startXOverride
+      : Math.ceil((trainX - KEEP_BEHIND - FALL - SEG_LEN) / SEG_LEN) * SEG_LEN
     let x = startX
     for (const s of segments) {
       s.x = x
@@ -95,6 +98,8 @@ export function createFloatingTrack(scene, options = {}) {
       }
       return
     }
+    // 起步缓慢浮起：整段轨道一起从水下升起（比正常铺设更慢）
+    if (startRamp < 1) startRamp = Math.min(1, startRamp + dt / 4.5)
     if (prevTrainX === null || Math.abs(trainX - prevTrainX) > SEG_LEN * 2) seed(trainX)
     prevTrainX = trainX
 
@@ -110,12 +115,12 @@ export function createFloatingTrack(scene, options = {}) {
     }
 
     for (const s of segments) {
-      const h = heightFactor(s.x - trainX)
+      const h = heightFactor(s.x - trainX) * startRamp
       s.mesh.position.y = upY - (1 - h) * SUBMERGE // h≤1 → 永不高于就位高度
       s.mesh.position.z = 0
-      s.mesh.visible = h > 0.001
+      s.mesh.visible = h > 0.78 // 只在水面附近（即将破水而出）才渲染，避免水下段透过海水显形
     }
   }
 
-  return { group, update, setArmed: (v) => { armed = !!v } }
+  return { group, update, setArmed: (v) => { armed = !!v; startRamp = 1 }, arm: () => { armed = true; startRamp = 0 } }
 }

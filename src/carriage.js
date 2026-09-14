@@ -7,9 +7,24 @@ import { createStarryCaravanModel } from './createStarryModel'
 
 // ============ 夏日幻想车厢（主车厢）—— Pipeline 生成版 ============
 export function createCarriage() {
-  const model = createSummerCaravanModel({ qualityPriority: 'gameplay', castShadow: true, receiveShadow: true })
-  model.scale.set(1.5, 1.5, 1.5)
+  const model = createCarriageModelById('summer')
   return { group: model }
+}
+
+// 按车厢 id 生成主列车模型（与展示车厢同一批工厂，主列车缩放 1.5）
+const CARRIAGE_FACTORY = {
+  summer: createSummerCaravanModel,
+  blackcat: createBlackCatCaravanModel,
+  vintage: createVintageCaravanModel,
+  ocean: createOceanCaravanModel,
+  starry: createStarryCaravanModel,
+}
+
+export function createCarriageModelById(id) {
+  const factory = CARRIAGE_FACTORY[id] || createSummerCaravanModel
+  const model = factory({ qualityPriority: 'gameplay', castShadow: true, receiveShadow: true })
+  model.scale.set(1.5, 1.5, 1.5)
+  return model
 }
 
 // ============ 以下为旧手写代码（保留参考） ============

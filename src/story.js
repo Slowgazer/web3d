@@ -95,15 +95,19 @@ export function initStory(ctx) {
 
     await countdown(['3', '2', '1'])
     await revealSphere()
-    createDriver(ctx)
-    floatingTrack.setArmed(true)
+    ctx.setCarriage?.(chosen.id)   // 换成所选车厢的模型
 
+    // 先让玩家看清自己的列车、把话说完，再启动
     dialog.play('（列车在海上跑？）（嗯？路呢？）', { speaker: '我' })
     await waitChoice()
     dialog.play('你会习惯的。；路，一直都在你脚下。', { speaker: '列车员' })
     await waitComplete()
     await wait(600)
     dialog.close()
+
+    // 缓慢启动 + 轨道从水下缓慢浮起，随后进入正常铺设
+    createDriver(ctx)
+    floatingTrack.arm()
 
     timeline(ctx)
   }
@@ -185,21 +189,22 @@ async function revealSphere() {
 // ---- 行驶：一直向前；相机只跟随位置，角度交给鼠标 ----
 function createDriver(ctx) {
   const { camera, controls, train, sun } = ctx
-  const SPEED = 15
-  const camOffset = new THREE.Vector3(6.5, 5.0, 8.5)   // 相机相对车厢的初始偏移
-  const lookOffset = new THREE.Vector3(0, 1.2, 0)
+  const SPEED_MAX = 15
+  const ACCEL = 2.5               // 缓慢启动：约 6s 加速到全速
+  const camOffset = new THREE.Vector3(8.5, 4.4, 11.5)  // 相机相对车厢的初始偏移（更远一点）
+  const lookOffset = new THREE.Vector3(0, 3.8, 0)      // 视点抬高 → 视线接近水平，天空占更多画面
 
-  // 初始机位：车厢旁上方一点
   camera.position.copy(train.position).add(camOffset)
   controls.target.copy(train.position).add(lookOffset)
-  controls.enabled = true // 允许鼠标拖动改变视角
+  controls.enabled = true
 
   let prevX = train.position.x
+  let speed = 0
   window.__storyUpdate = (dt) => {
-    train.position.x += SPEED * dt // 一直前进，无回绕、无停靠
+    speed = Math.min(SPEED_MAX, speed + ACCEL * dt) // 由慢到快
+    train.position.x += speed * dt
     const dx = train.position.x - prevX
     prevX = train.position.x
-    // 相机与视点整体平移：保持用户当前视角不变（不强制改角度）
     camera.position.x += dx
     controls.target.x += dx
     if (sun) { sun.target.position.x = train.position.x; sun.target.updateMatrixWorld() }

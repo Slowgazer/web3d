@@ -8,7 +8,7 @@ import GUI from 'lil-gui'
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js'
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js'
 import {
-  createCarriage, updateCarriageAnimation,
+  createCarriage, createCarriageModelById, updateCarriageAnimation,
   createBlackCatDisplay, createStarryDisplay, createVintageDisplay, createOceanDisplay,
 } from './carriage.js'
 import { SceneEditor } from './scene-editor.js'
@@ -110,7 +110,7 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color('#87ceeb')
 scene.fog = new THREE.Fog('#cde4f0', 70, 1700)
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 150)
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 150)
 camera.position.set(15, 10, 20)
 camera.lookAt(0, 2, 0)
 
@@ -546,11 +546,20 @@ scene.add(trackLineGroup)
 railbed.visible = false
 const floatingTrack = createFloatingTrack(scene)
 
-// ---- 列车车厢（夏日幻想主题，朝向 +X） ----
-const carriageObj = createCarriage()
-const train = carriageObj.group
-train.position.set(0, trackY + 0.15, 0)
+// ---- 列车车厢（外层 wrapper 稳定，内部模型随选择更换；朝向 +X） ----
+const train = new THREE.Group()
+train.name = 'TrainRoot'
+let carriageModel = createCarriageModelById('summer')
+train.add(carriageModel)
+// 车厢轮底相对原点约 -0.30；轨道就位时轨面世界高度约 0.70 → 让车轮正好落在钢轨上
+train.position.set(0, 1.0, 0)
 scene.add(train)
+
+function setCarriage(id) {
+  train.remove(carriageModel)
+  carriageModel = createCarriageModelById(id)
+  train.add(carriageModel)
+}
 
 // ---- 展示车厢（悬浮在列车上方） ----
 const displayGroup = new THREE.Group()
@@ -1382,6 +1391,8 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
   window.camera = camera
   window.renderer = renderer
   window.controls = controls
+  window.__THREE = THREE
+  window.__train = train
   const editor = SceneEditor.autoAttach({ autoScan: false, storageKey: 'web3d:game-layout' })
   if (editor) {
     // 环境 / 特效不作为可编辑资产
@@ -1411,7 +1422,7 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
     // 启动剧情流程（开场对话 / 选车厢 / 发车等）
     initStory({
       scene, camera, renderer, controls, sun, sky, skyUniforms, starUniforms,
-      train, carriageObj, floatingTrack, displayGroup, gui,
+      train, setCarriage, floatingTrack, displayGroup, gui,
       land: [grassMesh, distScene, pathGroup, flowerGroup, axes,
              mainLampPole, mainLampCube, mainLampTop, building, car],
     })
@@ -1508,8 +1519,8 @@ renderer.setAnimationLoop(() => {
   floatingTrack.update(train.position.x, dt)
   // 剧情钩子：由 story.js 每帧驱动（相机/时间流程等）
   if (window.__storyUpdate) window.__storyUpdate(dt, now)
-  // 车厢动画（星光闪烁，始终更新）
-  updateCarriageAnimation(carriageObj, now / 1000)
+  // 车厢动画（无操作，保留钩子）
+  updateCarriageAnimation()
   // 展示车厢悬浮旋转
   displayModels.forEach(({ model }, i) => {
     model.rotation.y += dt * 0.5
