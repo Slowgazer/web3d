@@ -98,20 +98,48 @@ export function bootTuneLab() {
 
   // ---- 海面 ----
   const of = gui.addFolder('🌊 海面')
-  const oceanNums = ['uScale', 'uSmoothness', 'uEdgeThreshold', 'uEdgeSoftness', 'uFlowX', 'uFlowZ',
-    'uCellSpeed', 'uNoiseScale', 'uNoiseFlowSpeed', 'uDistortAmount', 'uMidPos',
-    'uOpacity', 'uDeepOpacity', 'uFadeDistance', 'uFadeStrength', 'uWaveHeight', 'uWaveFreq', 'uWaveSpeed']
-  oceanNums.forEach((k) => of.add(oU[k], 'value', undefined, undefined, 0.01).name(k))
-  of.addColor(oU.uDeepColor, 'value').name('深水色')
-  of.addColor(oU.uMidColor, 'value').name('中间色')
-  of.addColor(oU.uHighlight, 'value').name('高光色')
+  const OCEAN_LABELS = {
+    uScale: '细胞大小',
+    uSmoothness: '细胞平滑',
+    uEdgeThreshold: '边缘阈值',
+    uEdgeSoftness: '边缘柔和',
+    uFlowX: '流动 X',
+    uFlowZ: '流动 Z',
+    uCellSpeed: '细胞动画速度',
+    uNoiseScale: '噪声缩放',
+    uNoiseFlowSpeed: '噪声流速',
+    uDistortAmount: '扭曲量',
+    uMidPos: '中间色位置',
+    uOpacity: '总体不透明度',
+    uDeepOpacity: '深水不透明度',
+    uFadeDistance: '淡出距离',
+    uFadeStrength: '淡出强度',
+    uWaveHeight: '波浪高度',
+    uWaveFreq: '波浪频率',
+    uWaveSpeed: '波浪速度',
+  }
+  Object.keys(OCEAN_LABELS).forEach((k) => of.add(oU[k], 'value', undefined, undefined, 0.01).name(OCEAN_LABELS[k]))
+  of.addColor(oU.uDeepColor, 'value').name('深水颜色')
+  of.addColor(oU.uMidColor, 'value').name('中间颜色')
+  of.addColor(oU.uHighlight, 'value').name('高光颜色')
   of.add({ day: () => applyOceanPreset(OCEAN_PRESETS.day) }, 'day').name('· 载入白天参数')
   of.add({ dusk: () => applyOceanPreset(OCEAN_PRESETS.dusk) }, 'dusk').name('· 载入黄昏/夜晚参数')
 
   // ---- 轨道 ----
-  const tf = gui.addFolder('🛤 轨道（SEG_LEN/POOL 改动需刷新）')
-  ;['LEAD', 'APPEAR_END', 'KEEP_BEHIND', 'FALL', 'SUBMERGE', 'UP_Y', 'START_RAMP', 'VISIBLE_H']
-    .forEach((k) => tf.add(floatingTrack.params, k, 0, 120, 0.1).name(k))
+  const tf = gui.addFolder('🛤 轨道（段长/段数改动需刷新）')
+  const TRACK_LABELS = {
+    LEAD: '起始浮起距离',
+    APPEAR_END: '完全就位距离',
+    KEEP_BEHIND: '车尾保持距离',
+    FALL: '下沉距离',
+    SUBMERGE: '起始水深',
+    UP_Y: '就位高度',
+    START_RAMP: '起步浮起时长(s)',
+    VISIBLE_H: '出现高度阈值',
+  }
+  Object.keys(TRACK_LABELS).forEach((k) => {
+    tf.add(floatingTrack.params, k, 0, 120, 0.1).name(TRACK_LABELS[k])
+  })
 
   // ---- 列车 ----
   const cf = gui.addFolder('🚂 列车')
