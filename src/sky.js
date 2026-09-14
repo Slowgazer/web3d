@@ -95,6 +95,9 @@ uniform float uCloudSpeed;
 uniform float uCloudSoft;
 uniform float uShadeSteps;
 uniform float uCurve;
+uniform float uCloudLacunarity;   // 每层大小倍率
+uniform float uCloudGain;         // 每层强度衰减
+uniform vec3 uCloudLayerScale;    // 前 1→2 / 2→3 / 3→4 层各自的大小倍率
 uniform vec3 uCloudLight;
 uniform vec3 uCloudDark;
 uniform float uNightMode;
@@ -119,7 +122,15 @@ float vnoise(vec2 p) {
 const mat2 ROT = mat2(0.80, 0.60, -0.60, 0.80);
 float fbm(vec2 p) {
   float v = 0.0, a = 0.5;
-  for (int i = 0; i < 5; i++) { v += a * vnoise(p); p = ROT * p * 2.02; a *= 0.5; }
+  for (int i = 0; i < 5; i++) {
+    float mul = (i == 0) ? uCloudLayerScale.x
+              : (i == 1) ? uCloudLayerScale.y
+              : (i == 2) ? uCloudLayerScale.z
+              : uCloudLacunarity;
+    p = ROT * p * mul;
+    v += a * vnoise(p);
+    a *= uCloudGain;
+  }
   return v;
 }
 
@@ -216,6 +227,9 @@ export function createGhibliSky(radius = 1500, sunLight = null) {
     uCloudSoft: { value: 0.13 },
     uShadeSteps: { value: 3 },
     uCurve: { value: 0.2 },
+    uCloudLacunarity: { value: 2.02 },
+    uCloudGain: { value: 0.5 },
+    uCloudLayerScale: { value: new THREE.Vector3(2.02, 2.02, 2.02) },
     uCloudLight: { value: new THREE.Color() },
     uCloudDark: { value: new THREE.Color() },
     uNightMode: { value: 0.0 },

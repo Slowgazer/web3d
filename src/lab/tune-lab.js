@@ -89,6 +89,11 @@ export function bootTuneLab() {
   sf.add(sky.uniforms.uCloudSpeed, 'value', 0, 4, 0.05).name('云速度')
   sf.add(sky.uniforms.uCloudSoft, 'value', 0.02, 0.4, 0.005).name('云柔和')
   sf.add(sky.uniforms.uCurve, 'value', 0, 0.6, 0.01).name('云弧面')
+  sf.add(sky.uniforms.uCloudLayerScale.value, 'x', 1, 4, 0.01).name('第2层大小')
+  sf.add(sky.uniforms.uCloudLayerScale.value, 'y', 1, 4, 0.01).name('第3层大小')
+  sf.add(sky.uniforms.uCloudLayerScale.value, 'z', 1, 4, 0.01).name('第4层大小')
+  sf.add(sky.uniforms.uCloudLacunarity, 'value', 1, 4, 0.01).name('第5层大小倍率')
+  sf.add(sky.uniforms.uCloudGain, 'value', 0.1, 0.9, 0.01).name('层间强度衰减')
   sf.addColor(sky.uniforms.uZenith, 'value').name('天顶色')
   sf.addColor(sky.uniforms.uMid, 'value').name('中部色')
   sf.addColor(sky.uniforms.uHorizon, 'value').name('地平线色')
@@ -168,6 +173,7 @@ export function bootTuneLab() {
     Object.keys(sky.uniforms).forEach((k) => {
       const v = sky.uniforms[k].value
       if (v && v.isColor) skyU[k] = hex(v)
+      else if (v && v.isVector3) skyU[k] = [v.x, v.y, v.z]
       else if (typeof v === 'number') skyU[k] = v
     })
     return {
