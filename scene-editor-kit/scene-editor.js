@@ -1159,7 +1159,10 @@ export class SceneEditor {
     this._refreshHelpers()
     this._refreshOutliner()
     this._syncInspector()
-    if (this.ui && data && data.ui) this.ui.applyLayout(data.ui)
+    if (this.ui && data && data.ui) {
+      this._pendingUILayout = data.ui
+      this.ui.applyLayout(data.ui)
+    }
     if (missing.length) console.warn('[scene-editor] applyLayout 未匹配到的 id:', missing)
     this._emit('layoutapplied', { missing })
     if (applied > 0) this._pushHistory()
@@ -1169,6 +1172,7 @@ export class SceneEditor {
   save() {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.serialize()))
+      if (this.ui) this.ui.save() // 同步写 UI 键，两条恢复路径都能用
       return true
     } catch (err) {
       console.error('[scene-editor] 保存失败', err)
@@ -1567,6 +1571,8 @@ export class SceneEditor {
     if (!this.ui) return 0
     const n = this.ui.scan(document.body, { autoSelectors: selectors || this.uiAutoSelectors })
     this.ui.restore()
+    // 主布局里带的 UI 布局（在 3D scan 时元素还没登记）在这里补应用
+    if (this._pendingUILayout) this.ui.applyLayout(this._pendingUILayout)
     this._refreshUIList()
     return n
   }
@@ -1574,6 +1580,7 @@ export class SceneEditor {
   registerUI(el, meta = {}) {
     if (!this.ui) return null
     const id = this.ui.register(el, meta)
+    if (this._pendingUILayout) this.ui.applyLayout(this._pendingUILayout)
     this._refreshUIList()
     return id
   }
