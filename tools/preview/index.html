@@ -41,10 +41,12 @@ async function boot() {
   let group = null
   if (modelPath) {
     const mod = await import(/* @vite-ignore */ '/' + modelPath.replace(/^\/+/, ''))
-    // 约定：工厂函数导出为 create*Model，可无参调用；也兼容 default 导出
-    const factory = Object.values(mod).find(
-      (e) => typeof e === 'function' && /^(create|build)/i.test(e.name)
-    ) ?? mod.default
+    // 约定：工厂函数导出为 create*Model，可无参调用；优先名字以 Model 结尾的主工厂，
+    // 再退回到任意 create*/build*，排除 Environment/Lights/Camera 等辅助工厂；最后兼容 default 导出
+    const fns = Object.values(mod).filter((e) => typeof e === 'function' && /^(create|build)/i.test(e.name))
+    const factory = fns.find((e) => /Model$/i.test(e.name))
+      ?? fns.find((e) => !/Environment|Lights|Camera|Renderer/i.test(e.name))
+      ?? mod.default
     if (!factory) throw new Error('未找到 create*/build* 工厂函数: ' + modelPath)
     group = await factory()
     if (!(group instanceof THREE.Group)) {
@@ -76,6 +78,15 @@ async function boot() {
     camera.lookAt(0, 0, 0)
   }
 
+  // 等待所有贴图（TextureLoader 走 DefaultLoadingManager）加载完再截图，否则首帧是黑的
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, 4000)
+    const prev = THREE.DefaultLoadingManager.onLoad
+    THREE.DefaultLoadingManager.onLoad = () => { clearTimeout(timer); if (prev) prev(); resolve() }
+    // 已经加载完毕（空队列）时 onLoad 不会再触发，用下一个宏任务兜底
+    setTimeout(() => { if (THREE.DefaultLoadingManager.itemsTotal === 0) { clearTimeout(timer); resolve() } }, 60)
+  })
+
   renderer.render(scene, camera)
   // 截图脚本等待此标志
   window.__ready = true
@@ -83,8 +94,8 @@ async function boot() {
 }
 
 boot().catch((err) => {
-  document.body.innerHTML = '<pre style="color:#f66">' + err.stack + '</pre>'
-  window.__error = String(err)
+  document.body.innerHTML = '<pre style="color:#f66">' + (err.stack || err) + '</pre>'
+  window.__error = String(err && err.stack ? err.stack : err)
 })
 </script>
 </body>

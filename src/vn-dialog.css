@@ -1,0 +1,115 @@
+/* ==========================================================================
+   视觉小说对话框（开场用）—— 底部缩小版，支持 “红字” 与 （）选项
+   ========================================================================== */
+#vn-root {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  user-select: none;
+}
+
+/* 左侧立绘 */
+#vn-sprite {
+  position: absolute;
+  left: 3.5vw;
+  bottom: 0;
+  height: min(78vh, 68vw);
+  max-height: 82vh;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  filter: drop-shadow(0 -6px 20px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+#vn-sprite.show { opacity: 1; transform: translateY(0); }
+
+/* 对话框 */
+#vn-box {
+  position: absolute;
+  left: 50%;
+  bottom: 5vh;
+  transform: translateX(-50%);
+  width: min(820px, 78vw);
+  min-height: 128px;
+  background: rgba(14, 17, 28, 0.9);
+  border: 2px solid rgba(246, 239, 220, 0.85);
+  border-radius: 2px;
+  box-shadow: 6px 6px 0 rgba(217, 79, 79, 0.9), 0 16px 30px rgba(0, 0, 0, 0.45);
+  padding: 20px 26px 22px;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  pointer-events: auto;
+  cursor: pointer;
+}
+#vn-box.show { opacity: 1; }
+
+#vn-name {
+  position: absolute;
+  top: -16px;
+  left: 20px;
+  background: #d94f4f;
+  color: #fff;
+  font-weight: 800;
+  font-style: italic;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  padding: 4px 16px 4px 12px;
+  transform: skewX(-8deg);
+  box-shadow: 3px 3px 0 rgba(14, 17, 28, 0.9);
+}
+#vn-name span { display: inline-block; transform: skewX(8deg); }
+
+#vn-text {
+  color: #f6efdc;
+  font-size: clamp(15px, 1.9vw, 21px);
+  font-weight: 600;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  min-height: 3.4em;
+  white-space: pre-wrap;
+}
+#vn-text .red { color: #ff6b6b; }
+
+/* 选择项 */
+#vn-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+.vn-choice {
+  pointer-events: auto;
+  text-align: left;
+  background: rgba(28, 33, 50, 0.95);
+  color: #f6efdc;
+  border: 2px solid rgba(246, 239, 220, 0.5);
+  border-radius: 2px;
+  padding: 10px 18px;
+  font-size: clamp(14px, 1.7vw, 19px);
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.vn-choice:hover {
+  background: #d94f4f;
+  border-color: #fff;
+  transform: translateX(4px);
+}
+
+/* 继续指示 */
+#vn-next {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 12px solid #d94f4f;
+  opacity: 0;
+}
+#vn-root.ready #vn-next { opacity: 1; animation: vn-blink 1s steps(2, end) infinite; }
+@keyframes vn-blink { 50% { opacity: 0.15; } }

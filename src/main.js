@@ -12,6 +12,9 @@ import {
   createBlackCatDisplay, createStarryDisplay, createVintageDisplay, createOceanDisplay,
 } from './carriage.js'
 import { SceneEditor } from './scene-editor.js'
+import { createGhibliSky } from './sky.js'
+import { createFloatingTrack } from './floatingTrack.js'
+import { initStory } from './story.js'
 
 const SUNFLOWER_PATH = '/models/Sunflower/PUSHILIN_sunflower.obj'
 const SUNFLOWER_MTL = '/models/Sunflower/PUSHILIN_sunflower.mtl'
@@ -32,7 +35,6 @@ function saveState() {
     flowerSizeMin: state.flowerSizeMin,
     flowerSizeMax: state.flowerSizeMax,
     flowerRange: state.flowerRange,
-    cloudDensity: state.cloudDensity,
     buildingState: { ...buildingState },
     carState: { ...carState },
     sunPos: { x: sun.position.x, y: sun.position.y, z: sun.position.z },
@@ -115,9 +117,8 @@ camera.lookAt(0, 2, 0)
 // 更新相机远平面为2000以适应扩大的视距
 camera.far = 3300
 camera.updateProjectionMatrix()
-camera.updateProjectionMatrix()
 
-const renderer = new THREE.WebGLRenderer({ antialias: true })
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.shadowMap.enabled = true
@@ -133,6 +134,19 @@ const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true; controls.dampingFactor = 0.08
 controls.minDistance = 5
 controls.maxDistance = 500; controls.target.set(0, 2, 0); controls.update()
+
+// URL 调试参数：?cam=x,y,z&look=x,y,z 指定初始机位（便于截图验证）
+const urlParams = new URLSearchParams(location.search)
+const camFromUrl = urlParams.get('cam')
+if (camFromUrl) {
+  const [x, y, z] = camFromUrl.split(',').map(Number)
+  if ([x, y, z].every(Number.isFinite)) camera.position.set(x, y, z)
+}
+const lookFromUrl = urlParams.get('look')
+if (lookFromUrl) {
+  const [x, y, z] = lookFromUrl.split(',').map(Number)
+  if ([x, y, z].every(Number.isFinite)) { controls.target.set(x, y, z); controls.update() }
+}
 
 // ---- VR 控制器 ----
 const controller1 = renderer.xr.getController(0)
@@ -193,116 +207,11 @@ grassMesh.rotation.x = -Math.PI / 2
 grassMesh.receiveShadow = true
 scene.add(grassMesh)
 
-// 天空球（吉卜力风格 - 参考 craftzdog/ghibli-style-shader）
-const skyUniforms = {
-  uTime: { value: 0 },
-  uTopColor: { value: new THREE.Color('#faf0e0') },
-  uMidTopColor: { value: new THREE.Color('#e8c8a0') },
-  uMidBotColor: { value: new THREE.Color('#7ec8e8') },
-  uBotColor: { value: new THREE.Color('#3a7aa5') },
-  uSunDir: { value: new THREE.Vector3(0.3, 0.5, 0.8).normalize() },
-  uSunColor: { value: new THREE.Color('#ffe8b0') },
-  uSunGlow: { value: 0.9 },
-  uCloudScale: { value: 2.0 },
-  uCloudThreshold: { value: 0.45 },
-  uCloudSoftness: { value: 0.12 },
-  uCloudSpeed: { value: 0.015 },
-  uNightMode: { value: 0.0 },
-  uNightTop: { value: new THREE.Color('#0a0a1a') },
-  uNightBot: { value: new THREE.Color('#1a1a3e') },
-}
-const skyMat = new THREE.ShaderMaterial({
-  side: THREE.BackSide,
-  uniforms: skyUniforms,
-  vertexShader: `
-    varying vec3 vWorldPos;
-    void main() {
-      vec4 w = modelMatrix * vec4(position, 1.0);
-      vWorldPos = w.xyz;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform float uTime;
-    uniform vec3 uTopColor;
-    uniform vec3 uMidTopColor;
-    uniform vec3 uMidBotColor;
-    uniform vec3 uBotColor;
-    uniform vec3 uSunDir;
-    uniform vec3 uSunColor;
-    uniform float uSunGlow;
-    uniform float uCloudScale;
-    uniform float uCloudThreshold;
-    uniform float uCloudSoftness;
-    uniform float uCloudSpeed;
-    uniform float uNightMode;
-    uniform vec3 uNightTop;
-    uniform vec3 uNightBot;
-    varying vec3 vWorldPos;
-
-    float hash(vec2 p) {
-      p = fract(p * vec2(127.1, 311.7));
-      p += dot(p, p + 45.32);
-      return fract(p.x * p.y);
-    }
-    float vnoise(vec2 p) {
-      vec2 i = floor(p), f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      return mix(
-        mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-        mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-        f.y
-      );
-    }
-    float fbm(vec2 p) {
-      float v = 0.0, a = 0.5;
-      for (int i = 0; i < 4; i++) { v += a * vnoise(p); p *= 2.3; a *= 0.5; }
-      return v;
-    }
-
-    void main() {
-      vec3 dir = normalize(vWorldPos);
-      float h = dir.y * 0.5 + 0.5;
-
-      // 4 段吉卜力风格渐变
-      vec3 dayColor;
-      if (h < 0.25) {
-        dayColor = mix(uBotColor, uMidBotColor, h / 0.25);
-      } else if (h < 0.55) {
-        dayColor = mix(uMidBotColor, uMidTopColor, (h - 0.25) / 0.3);
-      } else {
-        dayColor = mix(uMidTopColor, uTopColor, (h - 0.55) / 0.45);
-      }
-
-      // 太阳（圆盘 + 辉光）
-      float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
-      float sunDisc = smoothstep(0.998, 1.0, sunDot);
-      float sunGlow = smoothstep(0.85, 1.0, sunDot) * uSunGlow;
-
-      // 云（FBM 噪声，球面映射避免地平线拉伸）
-      vec2 cloudUV = vec2(atan(dir.z, dir.x), asin(dir.y)) * uCloudScale + uTime * uCloudSpeed;
-      float cloud = fbm(cloudUV);
-      float cloudAlpha = smoothstep(
-        uCloudThreshold - uCloudSoftness,
-        uCloudThreshold + uCloudSoftness,
-        cloud
-      );
-      cloudAlpha *= smoothstep(0.48, 0.55, h) * smoothstep(0.85, 0.6, h);
-
-      vec3 cloudColor = mix(vec3(1.0, 0.95, 0.85), uSunColor, 0.3);
-      vec3 col = mix(dayColor, cloudColor, cloudAlpha * 0.65);
-      col += sunDisc * uSunColor * 2.0 + sunGlow * uSunColor * 0.4;
-
-      // 夜晚混合
-      vec3 nightColor = mix(uNightTop, uNightBot, h);
-      col = mix(col, nightColor, uNightMode);
-
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-})
-const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 32), skyMat)
-scene.add(skyMesh)
+// 天空球（卡通体积云穹顶，含夏日/黄昏预设，见 src/sky.js）
+// 注意：sun 灯在下方光照区创建后再传入，此处先占位
+let sky = null
+let skyMesh = null
+let skyUniforms = null
 
 // ---- 旋转星空（星轨效果） ----
 const starUniforms = {
@@ -382,8 +291,9 @@ const starMat = new THREE.ShaderMaterial({
       float starMask = star * twinkle * visible * step(0.5, sh);
 
       // ========== 拖尾（Voronoi 圆弧，沿 YZ 方向） ==========
+      // 性能：星轨关闭时整块跳过（每像素 93 次 Voronoi 循环非常昂贵）
       float trailVal = 0.0;
-      {
+      if (uSwirlMode > 0.5) {
         float xAngle = acos(clamp(rDir.x, -1.0, 1.0));
         float yzAngle = atan(rDir.z, rDir.y);
         vec2 vuv = vec2(xAngle * 10.0, yzAngle * 6.0);
@@ -526,28 +436,20 @@ const oMat = new THREE.ShaderMaterial({
       return 0.5 + 0.5 * sin(uTime * uCellSpeed + 6.2831 * seed);
     }
 
-    float voronoiF1(vec2 p) {
+    // F1 与平滑 F1 一次循环同时求出（原来两遍 3x3 循环，省一半 hash/sin）
+    vec2 voronoiF1Pair(vec2 p) {
       vec2 i = floor(p), f = fract(p);
       float md = 8.0;
-      for (int y = -1; y <= 1; y++)
-        for (int x = -1; x <= 1; x++) {
-          vec2 n = vec2(float(x), float(y));
-          vec2 pt = cellPt(hash2(i + n));
-          md = min(md, length(n + pt - f));
-        }
-      return md;
-    }
-
-    float voronoiSF1(vec2 p) {
-      vec2 i = floor(p), f = fract(p);
       float res = 8.0;
       for (int y = -1; y <= 1; y++)
         for (int x = -1; x <= 1; x++) {
           vec2 n = vec2(float(x), float(y));
           vec2 pt = cellPt(hash2(i + n));
-          res = smin(res, length(n + pt - f), uSmoothness);
+          float d = length(n + pt - f);
+          md = min(md, d);
+          res = smin(res, d, uSmoothness);
         }
-      return res;
+      return vec2(md, res);
     }
 
     float nHash(vec2 p) {
@@ -579,8 +481,9 @@ const oMat = new THREE.ShaderMaterial({
 
       vec2 uv = vWorldPos * uScale + vec2(uFlowX, uFlowZ) * uTime + distort;
 
-      float f1 = voronoiF1(uv);
-      float sf1 = voronoiSF1(uv);
+      vec2 f1Pair = voronoiF1Pair(uv);
+      float f1 = f1Pair.x;
+      float sf1 = f1Pair.y;
       float edge = f1 - sf1;
 
       float t = smoothstep(uEdgeThreshold - uEdgeSoftness, uEdgeThreshold + uEdgeSoftness, edge);
@@ -626,15 +529,22 @@ railbed.castShadow = true
 railbed.receiveShadow = true
 scene.add(railbed)
 
-// ---- 铁轨线条 ----
+// ---- 铁轨线条（静态轨线：改由「浮起搭路」动态生成，先隐藏） ----
 const trackMat = new THREE.LineBasicMaterial({ color: '#888888' })
 const trackY = -0.3 + rrh / 2
 const trackZ = 0.75
+const trackLineGroup = new THREE.Group()
 for (const z of [-trackZ, trackZ]) {
   const pts = [new THREE.Vector3(-100, trackY, z), new THREE.Vector3(100, trackY, z)]
   const g = new THREE.BufferGeometry().setFromPoints(pts)
-  scene.add(new THREE.Line(g, trackMat))
+  trackLineGroup.add(new THREE.Line(g, trackMat))
 }
+trackLineGroup.visible = false
+scene.add(trackLineGroup)
+
+// ---- 静态路基隐藏，改用「浮起搭路」（见 src/floatingTrack.js） ----
+railbed.visible = false
+const floatingTrack = createFloatingTrack(scene)
 
 // ---- 列车车厢（夏日幻想主题，朝向 +X） ----
 const carriageObj = createCarriage()
@@ -683,13 +593,21 @@ scene.add(new THREE.HemisphereLight('#87ceeb', '#6a8a4a', 0.5))
 const sun = new THREE.DirectionalLight('#fff8e6', 2.5)
 sun.position.set(20, 20, 10)
 sun.castShadow = true
-sun.shadow.mapSize.set(4096, 4096)
+sun.shadow.mapSize.set(2048, 2048)
 sun.shadow.camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.5, 130)
 sun.shadow.bias = -0.0005
 sun.target.position.set(0, 0, 0)
 scene.add(sun.target)
 scene.add(sun)
-scene.add(new THREE.DirectionalLight('#a0c8e8', 0.3).position.set(-15, 8, -10))
+const fillLight = new THREE.DirectionalLight('#a0c8e8', 0.3)
+fillLight.position.set(-15, 8, -10)
+scene.add(fillLight)
+
+// 创建卡通天空（夏日/黄昏预设会同步过渡太阳灯）
+sky = createGhibliSky(1500, sun)
+skyMesh = sky.mesh
+skyUniforms = sky.uniforms
+scene.add(skyMesh)
 
 // ---- 坐标轴 ----
 const axes = new THREE.AxesHelper(25)
@@ -738,11 +656,11 @@ function createDirtPath() {
 }
 createDirtPath()
 
-// ---- 花朵 ----
+// ---- 花朵（InstancedMesh 实例化：250 朵花仅 2~4 次 draw call） ----
 const flowerGroup = new THREE.Group()
 scene.add(flowerGroup)
 let sunflowerTpl, marigoldTpl
-const flowerInstances = []
+let flowerTypes = [] // [{ meshes: InstancedMesh[], total: 该类槽位数 }]
 const saved = loadState()
 
 const state = {
@@ -750,7 +668,6 @@ const state = {
   flowerSizeMin: saved.flowerSizeMin ?? 0.6,
   flowerSizeMax: saved.flowerSizeMax ?? 1.4,
   flowerRange: saved.flowerRange ?? 12,
-  cloudDensity: saved.cloudDensity ?? 15,
 }
 
 async function initFlowers() {
@@ -759,12 +676,33 @@ async function initFlowers() {
   rebuildFlowers()
 }
 
+// 提取模板里的 (几何体, 材质, 局部矩阵)，供实例化复用
+function extractTemplateParts(template) {
+  template.updateMatrixWorld(true)
+  const parts = []
+  template.traverse((c) => {
+    if (c.isMesh) parts.push({ geo: c.geometry, mat: c.material, local: c.matrixWorld.clone() })
+  })
+  return parts
+}
+
 function rebuildFlowers() {
-  flowerInstances.forEach((f) => flowerGroup.remove(f))
-  flowerInstances.length = 0
+  // 清理旧实例（dispose 只释放实例缓冲，几何体/材质与模板共享不销毁）
+  flowerTypes.forEach((t) => t.meshes.forEach((m) => { flowerGroup.remove(m); m.dispose() }))
+  flowerTypes = []
 
   const total = 250
   const range = state.flowerRange
+  const typeDefs = [
+    { tpl: sunflowerTpl, slots: [] },
+    { tpl: marigoldTpl, slots: [] },
+  ]
+
+  const m = new THREE.Matrix4()
+  const q = new THREE.Quaternion()
+  const pos = new THREE.Vector3()
+  const scl = new THREE.Vector3()
+  const euler = new THREE.Euler()
 
   for (let i = 0; i < total; i++) {
     const angle = Math.random() * Math.PI * 2
@@ -776,26 +714,41 @@ function rebuildFlowers() {
     if (Math.abs(x) < 2.5 && z > -1.5 && z < 3) continue
     if (Math.abs(x) < 1.2 && z > 2 && z < Math.min(17, range + 5)) continue
 
-    const template = Math.random() < 0.5 ? sunflowerTpl : marigoldTpl
-    const flower = template.clone(true)
+    const typeIdx = Math.random() < 0.5 ? 0 : 1
+    const tpl = typeDefs[typeIdx].tpl
     const s = state.flowerSizeMin + Math.random() * (state.flowerSizeMax - state.flowerSizeMin)
-    flower.scale.multiplyScalar(s)
-
-    const bboxBottom = template.userData.bboxBottom * s
-    flower.position.set(x, -bboxBottom, z)
-    flower.rotation.y = Math.random() * Math.PI * 2
-    flower.visible = false
-    flowerGroup.add(flower)
-    flowerInstances.push(flower)
+    euler.set(0, Math.random() * Math.PI * 2, 0)
+    q.setFromEuler(euler)
+    pos.set(x, -tpl.userData.bboxBottom * s, z)
+    scl.setScalar(s)
+    typeDefs[typeIdx].slots.push(m.compose(pos, q, scl).clone())
   }
+
+  const full = new THREE.Matrix4()
+  flowerTypes = typeDefs.filter((t) => t.slots.length > 0).map((t) => {
+    const parts = extractTemplateParts(t.tpl)
+    const meshes = parts.map((p) => {
+      const im = new THREE.InstancedMesh(p.geo, p.mat, t.slots.length)
+      im.castShadow = true
+      im.receiveShadow = true
+      t.slots.forEach((slotM, i) => im.setMatrixAt(i, full.copy(slotM).multiply(p.local)))
+      im.instanceMatrix.needsUpdate = true
+      flowerGroup.add(im)
+      return im
+    })
+    return { meshes, total: t.slots.length }
+  })
   updateFlowerDensity(state.flowerDensity)
 }
 
 function updateFlowerDensity(count) {
-  const n = Math.min(count, flowerInstances.length)
-  for (let i = 0; i < flowerInstances.length; i++) {
-    flowerInstances[i].visible = i < n
-  }
+  const totalSlots = flowerTypes.reduce((a, t) => a + t.total, 0)
+  if (!totalSlots) return
+  // 按比例分配各类花的可见数量，保持混合比例不变
+  flowerTypes.forEach((t) => {
+    const n = Math.min(t.total, Math.round((count * t.total) / totalSlots))
+    t.meshes.forEach((im) => { im.count = n })
+  })
 }
 
 // ---- 建筑 ----
@@ -851,48 +804,6 @@ function updateCarTransform() {
     }
   })
 }
-
-// ---- 体积云（球体簇） ----
-const cloudGroup = new THREE.Group()
-scene.add(cloudGroup)
-let cloudPuffs = []
-
-function createVolumetricClouds(count) {
-  cloudPuffs.forEach((g) => cloudGroup.remove(g))
-  cloudPuffs = []
-  for (let i = 0; i < count; i++) {
-    const g = new THREE.Group()
-    const size = 2 + Math.random() * 4
-    const n = 6 + Math.floor(Math.random() * 10)
-    for (let j = 0; j < n; j++) {
-      const s = new THREE.Mesh(
-        new THREE.SphereGeometry(size * (0.3 + Math.random() * 0.7), 7, 6),
-        new THREE.MeshStandardMaterial({
-          color: '#ffffff',
-          transparent: true,
-          opacity: 0.5 + Math.random() * 0.3,
-          roughness: 1,
-          depthWrite: false,
-        }),
-      )
-      s.position.set(
-        (Math.random() - 0.5) * size * 2.5,
-        (Math.random() - 0.5) * size * 0.6,
-        (Math.random() - 0.5) * size * 1.8,
-      )
-      s.scale.y = 0.4 + Math.random() * 0.3
-      g.add(s)
-    }
-    g.position.set(
-      (Math.random() - 0.5) * 35,
-      12 + Math.random() * 10,
-      (Math.random() - 0.5) * 35,
-    )
-    cloudGroup.add(g)
-    cloudPuffs.push(g)
-  }
-}
-createVolumetricClouds(state.cloudDensity)
 
 // 恢复太阳位置
 if (saved.sunPos) { sun.position.set(saved.sunPos.x, saved.sunPos.y, saved.sunPos.z) }
@@ -995,23 +906,7 @@ const mainLampLight = new THREE.PointLight('#ffdd44', 0, 7)
 mainLampLight.position.set(3, 3.0, 7)
 scene.add(mainLampLight)
 
-// 加载动画模型（房子左边）
-const animMixers = []
-const gltfLoader = new GLTFLoader()
-gltfLoader.load('/models/smol_ame/scene.gltf', (gltf) => {
-  const model = gltf.scene
-  model.scale.setScalar(0.8)
-  model.position.set(0, 5.0, 0)
-  model.rotation.y = 0
-  model.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true } })
-  scene.add(model)
-
-  if (gltf.animations && gltf.animations.length > 0) {
-    const mixer = new THREE.AnimationMixer(model)
-    gltf.animations.forEach((clip) => mixer.clipAction(clip).play())
-    animMixers.push(mixer)
-  }
-})
+// （原场景的 smol_ame 动画模型已移除）
 
 // 门前黄色小路（CatmullRom 曲线）
 const pathPts = [
@@ -1083,7 +978,6 @@ ff.add(state, 'flowerDensity', 0, 250, 1).name('花朵数量').onChange((v) => {
 ff.add(state, 'flowerSizeMin', 0.2, 3, 0.1).name('最小尺寸').onChange(() => { rebuildFlowers(); saveState() })
 ff.add(state, 'flowerSizeMax', 0.2, 3, 0.1).name('最大尺寸').onChange(() => { rebuildFlowers(); saveState() })
 ff.add(state, 'flowerRange', 3, 25, 0.5).name('分布半径').onChange(() => { rebuildFlowers(); saveState() })
-ff.add(state, 'cloudDensity', 0, 30, 1).name('云密度').onChange((v) => { createVolumetricClouds(v); saveState() })
 
 const bf = gui.addFolder('🏠 建筑')
 bf.add(buildingState, 'px', -10, 10, 0.1).name('位置 X').onChange(() => { updateBuildingTransform(); saveState() })
@@ -1132,17 +1026,45 @@ of.add(oUniforms.uWaveHeight, 'value', 0, 0.5, 0.005).name('波浪高度')
 of.add(oUniforms.uWaveFreq, 'value', 0.05, 2, 0.01).name('波浪频率')
 of.add(oUniforms.uWaveSpeed, 'value', 0, 2, 0.05).name('波浪速度')
 
-const sf = gui.addFolder('☁️ 天空（吉卜力）')
-sf.addColor(skyUniforms.uTopColor, 'value').name('顶部颜色')
-sf.addColor(skyUniforms.uMidTopColor, 'value').name('中上颜色')
-sf.addColor(skyUniforms.uMidBotColor, 'value').name('中下颜色')
-sf.addColor(skyUniforms.uBotColor, 'value').name('地平线颜色')
+const sf = gui.addFolder('☁️ 天空（卡通体积云）')
+const skyGuiState = { preset: sky.currentPreset }
+const skyPresetBtn = document.getElementById('btn-sky-preset')
+function applySkyPreset(v) {
+  sky.setPreset(v, true)
+  skyGuiState.preset = v
+  if (skyPresetBtn) skyPresetBtn.textContent = v === 'dusk' ? '☀️ 夏日' : '🌇 黄昏'
+}
+const presetCtrl = sf.add(skyGuiState, 'preset', { 夏日蓝天: 'summer', 黄昏: 'dusk' })
+  .name('预设').onChange(applySkyPreset)
+if (skyPresetBtn) {
+  skyPresetBtn.addEventListener('click', () => {
+    presetCtrl.setValue(sky.currentPreset === 'summer' ? 'dusk' : 'summer')
+  })
+}
+// URL 参数 ?sky=dusk 可直接以指定预设打开
+const urlSky = new URLSearchParams(location.search).get('sky')
+if (urlSky && sky.presets[urlSky]) {
+  sky.setPreset(urlSky, false)
+  skyGuiState.preset = urlSky
+  presetCtrl.updateDisplay()
+  if (skyPresetBtn) skyPresetBtn.textContent = urlSky === 'dusk' ? '☀️ 夏日' : '🌇 黄昏'
+  // 预设会改动太阳灯位置/强度，刷新 GUI 显示
+  gui.controllersRecursive().forEach((c) => c.updateDisplay())
+}
+sf.addColor(skyUniforms.uZenith, 'value').name('天顶颜色')
+sf.addColor(skyUniforms.uMid, 'value').name('中部颜色')
+sf.addColor(skyUniforms.uHorizon, 'value').name('地平线颜色')
+sf.addColor(skyUniforms.uHorizonGlowColor, 'value').name('地平线光晕色')
+sf.add(skyUniforms.uHorizonGlowStrength, 'value', 0, 2, 0.01).name('光晕强度')
 sf.addColor(skyUniforms.uSunColor, 'value').name('太阳颜色')
-sf.add(skyUniforms.uSunGlow, 'value', 0, 2, 0.05).name('太阳辉光')
-sf.add(skyUniforms.uCloudScale, 'value', 0.001, 0.1, 0.001).name('云朵缩放')
-sf.add(skyUniforms.uCloudThreshold, 'value', 0.1, 0.9, 0.01).name('云朵阈值')
-sf.add(skyUniforms.uCloudSoftness, 'value', 0.01, 0.5, 0.01).name('云朵柔和')
-sf.add(skyUniforms.uCloudSpeed, 'value', 0, 0.1, 0.002).name('云朵速度')
+sf.add(skyUniforms.uSunGlow, 'value', 0, 3, 0.05).name('太阳辉光')
+sf.add(skyUniforms.uCoverage, 'value', 0, 1, 0.01).name('云覆盖度')
+sf.add(skyUniforms.uCloudScale, 'value', 0.2, 3, 0.01).name('云朵缩放')
+sf.add(skyUniforms.uCloudSpeed, 'value', 0, 3, 0.05).name('云朵速度')
+sf.add(skyUniforms.uCloudSoft, 'value', 0.02, 0.4, 0.005).name('云朵柔和')
+sf.add(skyUniforms.uShadeSteps, 'value', 1, 5, 1).name('卡通分层')
+sf.addColor(skyUniforms.uCloudLight, 'value').name('云受光色')
+sf.addColor(skyUniforms.uCloudDark, 'value').name('云背光色')
 
 const swf = gui.addFolder('🌀 星轨')
 swf.add(starUniforms.uStarBrightness, 'value', 0, 3, 0.1).name('星星亮度')
@@ -1250,7 +1172,12 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   // 复原上一个选中
   if (selectedShape) {
     selectedShape.scale.setScalar(selectedShape.userData.origScale)
-    if (shapeOutline) { selectedShape.remove(shapeOutline); shapeOutline = null }
+    if (shapeOutline) {
+      shapeOutline.geometry.dispose()
+      shapeOutline.material.dispose()
+      selectedShape.remove(shapeOutline)
+      shapeOutline = null
+    }
     selectedShape = null
     colorPicker.style.display = 'none'
   }
@@ -1275,10 +1202,20 @@ colorInput.addEventListener('input', () => {
 
 document.getElementById('btn-delete-selected').addEventListener('click', () => {
   if (!selectedShape) return
-  if (shapeOutline) { selectedShape.remove(shapeOutline); shapeOutline = null }
+  if (shapeOutline) {
+    shapeOutline.geometry.dispose()
+    shapeOutline.material.dispose()
+    selectedShape.remove(shapeOutline)
+    shapeOutline = null
+  }
   scene.remove(selectedShape)
   const i1 = shapeMeshes.indexOf(selectedShape)
-  if (i1 !== -1) shapeMeshes.splice(i1, 1)
+  if (i1 !== -1) {
+    shapeMeshes.splice(i1, 1)
+    // 随机形状独占几何体/材质，删除时释放显存（distScene 共享材质不碰）
+    selectedShape.geometry?.dispose()
+    selectedShape.material?.dispose()
+  }
   const i2 = selectables.indexOf(selectedShape)
   if (i2 !== -1) selectables.splice(i2, 1)
   selectedShape = null
@@ -1333,35 +1270,55 @@ function toggleSnow() {
 
 document.getElementById('btn-snow').addEventListener('click', toggleSnow)
 
-// ---- 下雨（GLTF 模型） ----
+// ---- 下雨（GLTF 模型，首次点击时懒加载） ----
 let rainModel = null
 let rainVisible = false
+let rainLoading = false
 const rainBtn = document.getElementById('btn-rain')
-new GLTFLoader().load('/models/rain_2/scene.gltf', (gltf) => {
-  rainModel = gltf.scene
-  rainModel.position.y = 8
-  rainModel.scale.setScalar(0.3)
-  rainModel.traverse((c) => {
-    if (c.isMesh) {
-      c.castShadow = false; c.receiveShadow = false
-      if (c.material) {
-        const mats = Array.isArray(c.material) ? c.material : [c.material]
-        mats.forEach((m) => {
-          m.transparent = true; m.opacity = 0.9; m.depthWrite = false
-          m.emissive = new THREE.Color('#aaccff')
-          m.emissiveIntensity = 5
-          m.blending = THREE.AdditiveBlending
-        })
+
+function loadRainModel(onReady) {
+  new GLTFLoader().load('/models/rain_2/scene.gltf', (gltf) => {
+    rainModel = gltf.scene
+    rainModel.position.y = 8
+    rainModel.scale.setScalar(0.3)
+    rainModel.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = false; c.receiveShadow = false
+        if (c.material) {
+          const mats = Array.isArray(c.material) ? c.material : [c.material]
+          mats.forEach((m) => {
+            m.transparent = true; m.opacity = 0.9; m.depthWrite = false
+            m.emissive = new THREE.Color('#aaccff')
+            m.emissiveIntensity = 5
+            m.blending = THREE.AdditiveBlending
+          })
+        }
       }
-    }
+    })
+    rainModel.visible = false
+    scene.add(rainModel)
+    console.log('✅ 雨模型加载完成')
+    onReady()
+  }, undefined, (err) => {
+    console.error('❌ 雨模型加载失败:', err)
+    rainLoading = false
+    rainBtn.textContent = '🌧 下雨'
   })
-  rainModel.visible = false
-  scene.add(rainModel)
-  console.log('✅ 雨模型加载完成')
-}, undefined, (err) => console.error('❌ 雨模型加载失败:', err))
+}
 
 rainBtn.addEventListener('click', () => {
-  if (!rainModel) return
+  if (!rainModel) {
+    if (rainLoading) return
+    rainLoading = true
+    rainBtn.textContent = '🌧 加载中…'
+    loadRainModel(() => {
+      rainLoading = false
+      rainVisible = true
+      rainModel.visible = true
+      rainBtn.textContent = '☀️ 停雨'
+    })
+    return
+  }
   rainVisible = !rainVisible
   rainModel.visible = rainVisible
   rainBtn.textContent = rainVisible ? '☀️ 停雨' : '🌧 下雨'
@@ -1428,7 +1385,7 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
   const editor = SceneEditor.autoAttach({ autoScan: false, storageKey: 'web3d:game-layout' })
   if (editor) {
     // 环境 / 特效不作为可编辑资产
-    ;[grassMesh, skyMesh, starSphere, ocean, railbed, axes, controller1, controller2, grip1, grip2]
+    ;[grassMesh, skyMesh, starSphere, ocean, railbed, axes, controller1, controller2, grip1, grip2, trackLineGroup, floatingTrack.group]
       .forEach((o) => o && editor.ignore(o))
     // 显式登记「整体」资产（导入模型 / 代码生成的组合）
     editor.register(train, { id: 'train', name: '列车' })
@@ -1437,12 +1394,37 @@ Promise.all([initFlowers(), initBuilding(), initCar()]).then(() => {
     if (car) editor.register(car, { id: 'car', name: '汽车' })
     editor.register(flowerGroup, { id: 'flowers', name: '花丛' })
     editor.register(pathGroup, { id: 'path', name: '土路' })
-    editor.register(cloudGroup, { id: 'clouds', name: '云' })
     // 兜底：识别其余非忽略的整体（灯、小屋场景、随机形状等）
     editor.scan()
     console.log('🎛 场景编辑器就绪：按 Tab 进入编辑模式')
   }
-}).catch((err) => console.error('加载失败:', err))
+
+  // 异步预编译全部着色器（KHR_parallel_shader_compile），避免首帧卡顿；
+  // 完成后隐藏加载动画页
+  return renderer.compileAsync(scene, camera).then(() => {
+    const overlay = document.getElementById('loading-overlay')
+    if (overlay) {
+      overlay.classList.add('hidden')
+      setTimeout(() => overlay.remove(), 700)
+    }
+    window.__ready = true
+    // 启动剧情流程（开场对话 / 选车厢 / 发车等）
+    initStory({
+      scene, camera, renderer, controls, sun, sky, skyUniforms, starUniforms,
+      train, carriageObj, floatingTrack, displayGroup, gui,
+      land: [grassMesh, distScene, pathGroup, flowerGroup, axes,
+             mainLampPole, mainLampCube, mainLampTop, building, car],
+    })
+  })
+}).catch((err) => {
+  console.error('加载失败:', err)
+  const overlay = document.getElementById('loading-overlay')
+  if (overlay) {
+    overlay.querySelector('.loader-text').textContent = '加载失败，请刷新重试'
+    overlay.querySelector('.loader-spinner').style.display = 'none'
+  }
+  window.__error = String(err && err.message || err)
+})
 
 // ---- WASD 移动视角 ----
 const keyState = { w: false, a: false, s: false, d: false, q: false, e: false }
@@ -1506,13 +1488,14 @@ renderer.setAnimationLoop(() => {
   starSphere.position.z = camera.position.z
   oUniforms.uCamXZ.value.set(camera.position.x, camera.position.z)
   oUniforms.uTime.value += dt
-  skyUniforms.uTime.value += dt
+  sky.update(dt)
+  starUniforms.uNightMode.value = skyUniforms.uNightMode.value
+  // 性能：白天且未开星轨时整颗星空球不渲染（其片元着色器非常昂贵）
+  starSphere.visible = starUniforms.uNightMode.value > 0.001 || starUniforms.uSwirlMode.value > 0.5
   starUniforms.uTime.value += dt
   starUniforms.uRotationAngle.value += dt * 0.025 * starUniforms.uSwirlMode.value
   if (starUniforms.uSwirlMode.value > 0.5) starUniforms.uTrailTime.value += dt
-  starUniforms.uNightMode.value = skyUniforms.uNightMode.value
   skyUniforms.uSunDir.value.copy(sun.position).normalize()
-  for (const mixer of animMixers) mixer.update(dt)
   if (trainRunning && !trainPaused) {
     train.position.x += trainSpeed * dt
     if (train.position.x > TRAIN_LIMIT) {
@@ -1521,6 +1504,10 @@ renderer.setAnimationLoop(() => {
     sun.target.position.x = train.position.x
     sun.target.updateMatrixWorld()
   }
+  // 浮起搭路：前方轨道从水下浮起就位，车尾后方下沉
+  floatingTrack.update(train.position.x, dt)
+  // 剧情钩子：由 story.js 每帧驱动（相机/时间流程等）
+  if (window.__storyUpdate) window.__storyUpdate(dt, now)
   // 车厢动画（星光闪烁，始终更新）
   updateCarriageAnimation(carriageObj, now / 1000)
   // 展示车厢悬浮旋转

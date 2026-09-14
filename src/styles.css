@@ -2,6 +2,18 @@
 body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif }
 canvas { display: block }
 
+#demo-links {
+  position: fixed; top: 12px; left: 12px; z-index: 20;
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+#demo-links a {
+  background: rgba(30,30,50,0.8); backdrop-filter: blur(6px);
+  color: #eee; border: 1px solid rgba(255,255,255,0.12);
+  padding: 7px 12px; border-radius: 8px; text-decoration: none;
+  font-size: 13px; transition: all 0.15s;
+}
+#demo-links a:hover { background: rgba(74,108,247,0.7); border-color: #4a6cf7 }
+
 #scene-tools {
   position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 8px; z-index: 20;
@@ -31,3 +43,24 @@ canvas { display: block }
   background: rgba(0,0,0,0.3); padding: 6px 16px; border-radius: 20px;
   backdrop-filter: blur(4px); pointer-events: none; user-select: none; z-index: 10;
 }
+
+/* ---- 加载动画页 ---- */
+#loading-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 18px;
+  background: linear-gradient(180deg, #2f7fd4 0%, #7ec4ee 55%, #e8f4fc 100%);
+  transition: opacity 0.6s ease;
+}
+#loading-overlay.hidden { opacity: 0; pointer-events: none; }
+.loader-spinner {
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 5px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  animation: loader-spin 0.9s linear infinite;
+}
+.loader-text {
+  color: #fff; font-size: 15px; letter-spacing: 2px;
+  text-shadow: 0 1px 6px rgba(47,127,212,0.5);
+}
+@keyframes loader-spin { to { transform: rotate(360deg) } }

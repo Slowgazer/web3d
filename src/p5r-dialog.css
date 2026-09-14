@@ -1,0 +1,150 @@
+/* ==========================================================================
+   P5R 风格对话框 —— 吉卜力水彩配色版
+   核心：SVG 多边形边框（JS 逐帧微形变） + HTML 文本层
+   ========================================================================== */
+
+.p5r-dialog {
+  /* ---- 调色板（改这里即可整体换色） ---- */
+  --p5-ink: #1a2036;      /* 墨蓝：描边与文字 */
+  --p5-ink-2: #0d1226;    /* 更深一档 */
+  --p5-accent: #d94f4f;   /* 朱红：投影/强调（呼应车顶 #c0392b） */
+  --p5-accent-2: #e2b13c; /* 土金（呼应铁轨 #c4a64a） */
+  --p5-panel: #f6efdc;    /* 奶油纸面（呼应参考图底 #f5efe0） */
+  --p5-panel-2: #ece0c4;  /* 纸面暗部 */
+
+  position: fixed;
+  left: 50%;
+  bottom: 4vh;
+  transform: translateX(-50%);
+  width: min(1000px, 94vw);
+  aspect-ratio: 1000 / 300;
+  z-index: 50;
+  user-select: none;
+  pointer-events: auto; /* 对话框自身可点击推进；不需要时用 clickToAdvance:false */
+  cursor: pointer;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  filter: drop-shadow(0 16px 26px rgba(10, 14, 30, 0.42));
+}
+
+.p5r-dialog.is-hidden { display: none; pointer-events: none; }
+
+/* ---- 舞台：负责入场弹出动画 ---- */
+.p5r-stage {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+.p5r-dialog.is-open .p5r-stage {
+  animation: p5r-pop 0.44s cubic-bezier(0.2, 1.4, 0.45, 1) both;
+}
+@keyframes p5r-pop {
+  0%   { transform: translateY(28px) scale(0.86) rotate(-1.6deg); opacity: 0; }
+  60%  { transform: translateY(-5px) scale(1.02) rotate(0.5deg);  opacity: 1; }
+  100% { transform: translateY(0) scale(1) rotate(0); }
+}
+
+/* ---- SVG 边框层 ---- */
+.p5r-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: var(--p5-ink); /* 供网点 pattern 的 currentColor 使用 */
+}
+.p5r-shadow {
+  fill: var(--p5-accent);
+  stroke: var(--p5-ink);
+  stroke-width: 8;
+  stroke-linejoin: round;
+}
+.p5r-body {
+  fill: var(--p5-panel);
+  stroke: var(--p5-ink);
+  stroke-width: 8;
+  stroke-linejoin: round;
+}
+/* 网点（halftone），P5 的漫画质感。fill 在 JS 里以属性写死 url(#p5r-dots)，
+   避免外部 CSS 中 url(#id) 被按样式表路径解析而导致失效 */
+.p5r-halftone {
+  opacity: 0.26;
+}
+
+/* ---- 文本内容层 ---- */
+.p5r-content {
+  position: absolute;
+  inset: 0;
+  padding: 5.4% 6.4% 6% 6.4%;
+  display: flex;
+  flex-direction: column;
+}
+
+.p5r-name {
+  align-self: flex-start;
+  background: var(--p5-ink);
+  color: var(--p5-panel);
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.1em;
+  font-size: clamp(14px, 1.85vw, 22px);
+  line-height: 1;
+  padding: 0.5em 1.5em 0.5em 1.1em;
+  margin: -1.6% 0 2.2% -1.6%;
+  clip-path: polygon(7% 0, 100% 0, 93% 100%, 0 100%);
+  transform: skewX(-9deg);
+  box-shadow: 5px 5px 0 var(--p5-accent);
+  white-space: nowrap;
+}
+.p5r-name > span { display: inline-block; transform: skewX(9deg); }
+
+.p5r-text {
+  flex: 1;
+  color: var(--p5-ink);
+  font-size: clamp(16px, 2.45vw, 30px);
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+}
+/* 打字机光标 */
+.p5r-text::after {
+  content: '';
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 0.06em;
+  background: var(--p5-accent);
+  vertical-align: -0.12em;
+  opacity: 0;
+}
+.p5r-dialog.is-typing .p5r-text::after { opacity: 1; animation: p5r-caret 0.7s steps(2, end) infinite; }
+@keyframes p5r-caret { 50% { opacity: 0; } }
+
+/* ---- 继续指示三角 ---- */
+.p5r-next {
+  position: absolute;
+  right: 5.6%;
+  bottom: 10%;
+  width: clamp(14px, 1.7vw, 22px);
+  aspect-ratio: 1;
+  background: var(--p5-accent);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  opacity: 0;
+  filter: drop-shadow(2px 2px 0 var(--p5-ink));
+}
+.p5r-dialog.is-ready .p5r-next {
+  opacity: 1;
+  animation: p5r-blink 1s steps(2, end) infinite;
+}
+@keyframes p5r-blink { 50% { opacity: 0.15; } }
+
+/* ---- 整框轻微呼吸，让静态时也不死板 ---- */
+.p5r-dialog.is-open .p5r-body,
+.p5r-dialog.is-open .p5r-shadow {
+  animation: p5r-breathe 3.6s ease-in-out infinite;
+}
+@keyframes p5r-breathe {
+  0%, 100% { filter: none; }
+  50%      { filter: brightness(1.03); }
+}

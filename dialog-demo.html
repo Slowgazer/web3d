@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P5R 风格对话框 · 演示</title>
+  <link rel="stylesheet" href="/src/p5r-dialog.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden; height: 100vh;
+      font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      color: #f6efdc;
+      background:
+        radial-gradient(circle at 20% 15%, #7ec4ee 0%, transparent 45%),
+        radial-gradient(circle at 82% 22%, #ffe6a8 0%, transparent 40%),
+        linear-gradient(180deg, #2f7fd4 0%, #6fb6e8 42%, #bfe3f4 68%, #e9d9a8 100%);
+    }
+    /* 装饰：海面与远山 */
+    .hills {
+      position: fixed; inset: 0; overflow: hidden; pointer-events: none;
+    }
+    .hills::before, .hills::after {
+      content: ''; position: absolute; left: -10%; right: -10%; bottom: 0;
+      border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    }
+    .hills::before { height: 34vh; background: #3f7f5e; opacity: .45; }
+    .hills::after  { height: 24vh; background: #2f6349; opacity: .35;
+                     left: 20%; right: -30%; }
+
+    .demo-tools {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 20; flex-wrap: wrap; justify-content: center;
+    }
+    .demo-tools button {
+      background: rgba(26, 32, 54, .82); color: #f6efdc;
+      border: 2px solid rgba(246, 239, 220, .25);
+      padding: 9px 18px; border-radius: 4px; cursor: pointer;
+      font-size: 14px; font-weight: 700; letter-spacing: .06em;
+      clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+      transition: transform .12s, background .15s;
+    }
+    .demo-tools button:hover { background: #d94f4f; transform: translateY(-1px); }
+    .demo-tools button:active { transform: translateY(1px); }
+
+    .hint {
+      position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; letter-spacing: .12em; color: rgba(26, 32, 54, .55);
+      z-index: 10; user-select: none;
+    }
+
+    /* 经典 P5R 红黑配色（选择器需比 .p5r-dialog 自身更高优先级） */
+    body.classic-dialog .p5r-dialog {
+      --p5-ink: #0b0b0b;
+      --p5-ink-2: #000;
+      --p5-accent: #e2231a;
+      --p5-accent-2: #ffffff;
+      --p5-panel: #ffffff;
+      --p5-panel-2: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="hills"></div>
+
+  <div class="demo-tools">
+    <button id="btn-play">▶ 播放台词</button>
+    <button id="btn-color">🎨 切换配色</button>
+    <button id="btn-shake">💥 冲击边框</button>
+  </div>
+
+  <p class="hint">点击画面 / 空格 / 回车 推进台词</p>
+
+  <script type="module">
+    import { P5RDialogue } from '/src/p5r-dialog.js'
+
+    // ?classic 可直接以经典 P5R 红黑配色打开，便于截图验证
+    if (new URLSearchParams(location.search).has('classic')) {
+      document.body.classList.add('classic-dialog')
+    }
+
+    const script = [
+      { name: '列车员', text: '……欢迎乘坐，本次列车开往海之尽头。' },
+      { name: '列车员', text: '请坐稳。窗外的风景，会有点晃。' },
+      { name: '我', text: '这、这辆车……是在海上跑的？' },
+      { name: '列车员', text: '嗯。铁轨会自己浮起来，一直铺到天边。' },
+      { name: '列车员', text: '……别盯着我的怀表看，它也在盯着你。' },
+    ]
+
+    const dlg = new P5RDialogue({
+      onEnd: () => { setTimeout(() => dlg.show(script), 900) }, // 播完循环演示
+    })
+
+    // 开场
+    dlg.show(script)
+
+    // 推进交互
+    const advance = () => { if (!dlg.el.classList.contains('is-hidden')) dlg.next() }
+    window.addEventListener('click', advance)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); advance() }
+    })
+
+    // 工具按钮
+    document.getElementById('btn-play').addEventListener('click', (e) => {
+      e.stopPropagation()
+      dlg.show(script)
+    })
+    document.getElementById('btn-color').addEventListener('click', (e) => {
+      e.stopPropagation()
+      document.body.classList.toggle('classic-dialog')
+    })
+    document.getElementById('btn-shake').addEventListener('click', (e) => {
+      e.stopPropagation()
+      dlg._kick = 1 // 手动触发一次边缘冲击
+    })
+
+    window.__ready = true
+  </script>
+</body>
+</html>
