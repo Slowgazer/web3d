@@ -39,6 +39,248 @@ function round3(n) {
   return Math.round(n * 1000) / 1000
 }
 
+// ============================================================
+// 2D 界面（DOM）编辑器
+// 让任意 HTML 元素可被拖拽移动 / 缩放，并按 id 持久化布局。
+// 与 3D 编辑器相互独立，通过 scene-editor 的「界面」标签页使用。
+// ============================================================
+export class UIEditor {
+  constructor(options = {}) {
+    const { storageKey = 'scene-editor:ui-layout', onSelect = null, onChange = null } = options
+    this.storageKey = storageKey
+    this.onSelect = onSelect
+    this.onChange = onChange
+    this.items = new Map()   // id -> { el, id, name }
+    this.selection = null
+    this.enabled = false
+    this._drag = null
+    this._pending = null
+    this._buildLayer()
+    this._bind()
+    this._maybeRestore()
+  }
+
+  _buildLayer() {
+    const layer = document.createElement('div')
+    layer.className = 'sced-drag-layer'
+    layer.style.display = 'none'
+    layer.innerHTML = `
+      <div class="sced-ui-hit" style="display:none">
+        <div class="sced-ui-label"></div>
+        <div class="sced-ui-handle" data-dir="nw"></div>
+        <div class="sced-ui-handle" data-dir="ne"></div>
+        <div class="sced-ui-handle" data-dir="sw"></div>
+        <div class="sced-ui-handle" data-dir="se"></div>
+      </div>`
+    document.body.appendChild(layer)
+    this.layer = layer
+    this.hit = layer.querySelector('.sced-ui-hit')
+    this.label = layer.querySelector('.sced-ui-label')
+  }
+
+  _bind() {
+    this._onDown = (e) => this._handleDown(e)
+    this._onMove = (e) => this._handleMove(e)
+    this._onUp = () => this._handleUp()
+    document.addEventListener('pointerdown', this._onDown, true)
+    document.addEventListener('pointermove', this._onMove, true)
+    document.addEventListener('pointerup', this._onUp, true)
+    window.addEventListener('scroll', () => this._syncHit(), true)
+    window.addEventListener('resize', () => this._syncHit())
+  }
+
+  setEnabled(on) {
+    this.enabled = !!on
+    this.layer.style.display = on ? 'block' : 'none'
+    if (!on) this.select(null)
+    else this._syncHit()
+  }
+
+  /** 把一个 DOM 元素登记为可编辑界面 */
+  register(el, meta = {}) {
+    if (!el || el.nodeType !== 1) return null
+    let id = meta.id || el.dataset.uiId
+    if (!id) id = 'ui_' + Math.random().toString(36).slice(2, 8)
+    el.dataset.uiId = id
+    if (meta.name) el.dataset.uiName = meta.name
+    const name = meta.name || el.dataset.uiName || id
+    this.items.set(id, { el, id, name })
+    return id
+  }
+
+  unregister(idOrEl) {
+    const rec = typeof idOrEl === 'string' ? this.items.get(idOrEl)
+      : this.list().find((r) => r.el === idOrEl)
+    if (!rec) return this
+    this.items.delete(rec.id)
+    if (this.selection === rec.id) this.select(null)
+    return this
+  }
+
+  /** 扫描页面：默认收拢带 data-ui-id 的元素；autoSelectors 可额外纳入选择器匹配的元素 */
+  scan(root = document.body, options = {}) {
+    root.querySelectorAll('[data-ui-id]').forEach((el) => {
+      const id = el.dataset.uiId
+      if (id && !this.items.has(id)) this.items.set(id, { el, id, name: el.dataset.uiName || id })
+    })
+    for (const sel of options.autoSelectors || []) {
+      root.querySelectorAll(sel).forEach((el) => {
+        if (!el.dataset.uiId) this.register(el, { name: el.dataset.uiName })
+      })
+    }
+    return this.items.size
+  }
+
+  list() { return [...this.items.values()] }
+
+  select(idOrEl) {
+    const rec = typeof idOrEl === 'string' ? this.items.get(idOrEl)
+      : this.list().find((r) => r.el === idOrEl)
+    this.selection = rec?.id || null
+    if (rec) this._applyDefaults(rec.el)
+    this._syncHit()
+    if (this.onSelect) this.onSelect(this.selection)
+    return this
+  }
+
+  _applyDefaults(el) {
+    const cs = getComputedStyle(el)
+    if (cs.translate === 'none') el.style.translate = '0px 0px'
+  }
+
+  _readTranslate(el) {
+    const t = getComputedStyle(el).translate
+    if (!t || t === 'none') return { x: 0, y: 0 }
+    const parts = t.split(' ').map((v) => parseFloat(v) || 0)
+    return { x: parts[0] || 0, y: parts[1] || 0 }
+  }
+
+  _handleDown(e) {
+    if (!this.enabled) return
+    const handle = e.target.closest?.('.sced-ui-handle')
+    const rec = this.selection ? this.items.get(this.selection) : null
+    if (handle && rec) {
+      e.preventDefault(); e.stopPropagation()
+      const r = rec.el.getBoundingClientRect()
+      this._drag = { mode: 'resize', dir: handle.dataset.dir, startX: e.clientX, startY: e.clientY,
+        el: rec.el, w0: r.width, h0: r.height }
+      return
+    }
+    const el = e.target.closest?.('[data-ui-id]')
+    if (el && this.items.has(el.dataset.uiId)) {
+      e.preventDefault(); e.stopPropagation()
+      this.select(el.dataset.uiId)
+      this._drag = { mode: 'move', startX: e.clientX, startY: e.clientY, el, t0: this._readTranslate(el) }
+    } else {
+      this.select(null)
+    }
+  }
+
+  _handleMove(e) {
+    if (!this.enabled || !this._drag) return
+    const d = this._drag
+    e.preventDefault(); e.stopPropagation()
+    if (d.mode === 'move') {
+      const x = Math.round(d.t0.x + (e.clientX - d.startX))
+      const y = Math.round(d.t0.y + (e.clientY - d.startY))
+      d.el.style.translate = `${x}px ${y}px`
+    } else {
+      const dx = e.clientX - d.startX
+      const dy = e.clientY - d.startY
+      let w = d.w0, h = d.h0
+      if (d.dir.includes('e')) w = d.w0 + dx
+      if (d.dir.includes('w')) w = d.w0 - dx
+      if (d.dir.includes('s')) h = d.h0 + dy
+      if (d.dir.includes('n')) h = d.h0 - dy
+      d.el.style.width = Math.max(8, Math.round(w)) + 'px'
+      d.el.style.height = Math.max(8, Math.round(h)) + 'px'
+    }
+    this._syncHit()
+  }
+
+  _handleUp() {
+    if (!this._drag) return
+    this._drag = null
+    this._syncHit()
+    this.save()
+    if (this.onChange) this.onChange()
+  }
+
+  _syncHit() {
+    const rec = this.selection ? this.items.get(this.selection) : null
+    if (!this.enabled || !rec || !rec.el.isConnected) { this.hit.style.display = 'none'; return }
+    const r = rec.el.getBoundingClientRect()
+    Object.assign(this.hit.style, {
+      display: 'block', left: r.left + 'px', top: r.top + 'px',
+      width: r.width + 'px', height: r.height + 'px',
+    })
+    this.label.textContent = rec.name
+  }
+
+  serialize() {
+    const out = {}
+    for (const rec of this.items.values()) {
+      const cs = getComputedStyle(rec.el)
+      const t = this._readTranslate(rec.el)
+      out[rec.id] = {
+        name: rec.name,
+        x: Math.round(t.x), y: Math.round(t.y),
+        width: cs.width, height: cs.height,
+        fontSize: cs.fontSize,
+        visible: cs.display !== 'none' && cs.visibility !== 'hidden',
+        zIndex: cs.zIndex,
+      }
+    }
+    return out
+  }
+
+  applyLayout(data) {
+    if (!data) return this
+    for (const [id, entry] of Object.entries(data)) {
+      const rec = this.items.get(id)
+      if (!rec) continue
+      const el = rec.el
+      if (typeof entry.x === 'number' || typeof entry.y === 'number') {
+        el.style.translate = `${entry.x || 0}px ${entry.y || 0}px`
+      }
+      if (entry.width && entry.width !== 'auto') el.style.width = entry.width
+      if (entry.height && entry.height !== 'auto') el.style.height = entry.height
+      if (entry.fontSize) el.style.fontSize = entry.fontSize
+      if (typeof entry.visible === 'boolean') el.style.display = entry.visible ? '' : 'none'
+      if (entry.zIndex && entry.zIndex !== 'auto') el.style.zIndex = entry.zIndex
+    }
+    return this
+  }
+
+  reset() {
+    for (const rec of this.items.values()) {
+      rec.el.style.translate = ''
+      rec.el.style.width = ''
+      rec.el.style.height = ''
+      rec.el.style.fontSize = ''
+    }
+    return this
+  }
+
+  save() {
+    try { localStorage.setItem(this.storageKey, JSON.stringify(this.serialize())) } catch { /* ignore */ }
+    return this
+  }
+
+  _maybeRestore() {
+    try {
+      const raw = localStorage.getItem(this.storageKey)
+      if (raw) this._pending = JSON.parse(raw)
+    } catch { /* ignore */ }
+  }
+
+  /** 元素登记完成后调用，应用上次保存的界面布局 */
+  restore() {
+    if (this._pending) { this.applyLayout(this._pending); this._pending = null }
+    return this
+  }
+}
+
 export class SceneEditor {
   constructor(options = {}) {
     const {
@@ -54,6 +296,8 @@ export class SceneEditor {
       gridDivisions = 40,
       unit = 'm',
       container = null,
+      enableUIEditing = true,
+      uiAutoSelectors = [],
     } = options
 
     if (!scene || !camera || !renderer) {
@@ -95,6 +339,16 @@ export class SceneEditor {
     this._idCounter = 0
 
     this.history = { stack: [], index: -1, limit: HISTORY_LIMIT }
+
+    // 2D 界面（DOM）编辑器
+    this.uiAutoSelectors = uiAutoSelectors
+    this.ui = enableUIEditing
+      ? new UIEditor({
+        storageKey: this.storageKey + ':ui',
+        onSelect: () => this._refreshUIList(),
+        onChange: () => this._refreshUIList(),
+      })
+      : null
 
     this._bind()
     this._injectStyles()
@@ -396,7 +650,7 @@ export class SceneEditor {
     if (obj.isLight || obj.isCamera) return false
     if (obj.isGridHelper || obj.isAxesHelper) return false
     let hasMesh = false
-    obj.traverse((o) => { if (o.isMesh) hasMesh = true })
+    obj.traverse((o) => { if (o.isMesh || o.isSprite) hasMesh = true })
     return hasMesh
   }
 
@@ -522,6 +776,18 @@ export class SceneEditor {
       const b = o.geometry.boundingBox.clone().applyMatrix4(m)
       if (!b.isEmpty()) box.union(b)
     })
+    if (box.isEmpty()) {
+      // 纯 2D（Sprite）资产：用 sprite 的缩放当尺寸
+      const center = new THREE.Vector3()
+      root.traverse((o) => {
+        if (!o.isSprite || o.userData.editorIgnore) return
+        const mm = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)
+        const b = new THREE.Box3()
+          .setFromCenterAndSize(center.clone(), new THREE.Vector3(1, 1, 0.02))
+          .applyMatrix4(mm)
+        if (!b.isEmpty()) box.union(b)
+      })
+    }
     if (box.isEmpty()) box.setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(1, 1, 1))
     return box
   }
@@ -588,7 +854,7 @@ export class SceneEditor {
     const meshes = []
     for (const a of this.assets) {
       if (!a.root.visible) continue
-      a.root.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o) })
+      a.root.traverse((o) => { if ((o.isMesh || o.isSprite) && o.visible) meshes.push(o) })
     }
     const hits = this.raycaster.intersectObjects(meshes, false)
     const additive = d.shift || d.ctrl
@@ -676,6 +942,7 @@ export class SceneEditor {
       this._clearHelpers()
     }
     if (this.controls) this.controls.enabled = true
+    if (this.ui) this.ui.setEnabled(this.editMode)
     if (this._grid) this._grid.visible = this.editMode && this.showGrid
     if (this._axesGroup) this._axesGroup.visible = this.editMode
     this._refreshOutliner()
@@ -866,6 +1133,7 @@ export class SceneEditor {
         scale: a.root.scale.toArray().map(round3),
         visible: a.root.visible,
       })),
+      ui: this.ui ? this.ui.serialize() : undefined,
     }
   }
 
@@ -891,6 +1159,7 @@ export class SceneEditor {
     this._refreshHelpers()
     this._refreshOutliner()
     this._syncInspector()
+    if (this.ui && data && data.ui) this.ui.applyLayout(data.ui)
     if (missing.length) console.warn('[scene-editor] applyLayout 未匹配到的 id:', missing)
     this._emit('layoutapplied', { missing })
     if (applied > 0) this._pushHistory()
@@ -1049,8 +1318,27 @@ export class SceneEditor {
       .sced-btn:hover { background: rgba(78,161,255,.22); }
       .sced-btn.active { background: #4ea1ff; color: #fff; border-color: #4ea1ff; }
       .sced-sep { width: 1px; height: 20px; background: rgba(255,255,255,.14); margin: 0 3px; }
-      .sced-outliner { top: 60px; left: 12px; bottom: 12px; width: 216px; display: flex; flex-direction: column; }
-      .sced-inspector { top: 60px; right: 12px; bottom: 12px; width: 260px; overflow-y: auto; padding: 10px; }
+      .sced-sidebar { top: 60px; left: 12px; bottom: 12px; width: 288px; display: flex; flex-direction: column; }
+      .sced-tabs { display: flex; gap: 2px; padding: 6px 6px 0; flex: none; }
+      .sced-tab { flex: 1; background: rgba(255,255,255,.05); color: #aab0ba; border: 1px solid rgba(255,255,255,.1);
+        border-bottom: none; border-radius: 6px 6px 0 0; padding: 6px 0; cursor: pointer; font-size: 12px; }
+      .sced-tab.is-active { background: rgba(78,161,255,.28); color: #fff; }
+      .sced-tabpanes { flex: 1; min-height: 0; border-top: 1px solid rgba(255,255,255,.1); }
+      .sced-tabpane { display: none; height: 100%; overflow-y: auto; padding: 6px; }
+      .sced-tabpane.is-active { display: block; }
+      .sced-ui-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 2px 8px; }
+      .sced-btn.wide { display: block; width: 100%; margin: 4px 0; text-align: left; }
+      .sced-drag-layer { position: fixed; inset: 0; z-index: 99998; pointer-events: none; }
+      .sced-ui-hit { position: fixed; border: 1.5px solid #4ea1ff; background: rgba(78,161,255,.12);
+        pointer-events: none; box-sizing: border-box; }
+      .sced-ui-hit .sced-ui-handle { position: absolute; width: 9px; height: 9px; background: #4ea1ff;
+        border: 1px solid #fff; border-radius: 2px; pointer-events: auto; }
+      .sced-ui-hit .sced-ui-label { position: absolute; top: -18px; left: 0; background: #4ea1ff; color: #fff;
+        font-size: 11px; padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+      .sced-ui-handle[data-dir="nw"] { left: -5px; top: -5px; cursor: nwse-resize; }
+      .sced-ui-handle[data-dir="ne"] { right: -5px; top: -5px; cursor: nesw-resize; }
+      .sced-ui-handle[data-dir="sw"] { left: -5px; bottom: -5px; cursor: nesw-resize; }
+      .sced-ui-handle[data-dir="se"] { right: -5px; bottom: -5px; cursor: nwse-resize; }
       .sced-title { font-weight: 600; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.1);
         color: #9ecbff; letter-spacing: .5px; }
       .sced-list { overflow-y: auto; padding: 6px; }
@@ -1105,11 +1393,39 @@ export class SceneEditor {
         <button class="sced-btn" data-act="reset">重置</button>
         <button class="sced-btn" data-act="focus">聚焦</button>
       </div>
-      <div class="sced-panel sced-outliner">
-        <div class="sced-title">资产列表</div>
-        <div class="sced-list" id="sced-list"></div>
+      <div class="sced-panel sced-sidebar">
+        <div class="sced-tabs">
+          <button class="sced-tab is-active" data-tab="objects">对象</button>
+          <button class="sced-tab" data-tab="ui">界面</button>
+          <button class="sced-tab" data-tab="props">属性</button>
+          <button class="sced-tab" data-tab="layout">布局</button>
+        </div>
+        <div class="sced-tabpanes">
+          <div class="sced-tabpane is-active" data-pane="objects">
+            <div class="sced-list" id="sced-list"></div>
+          </div>
+          <div class="sced-tabpane" data-pane="ui">
+            <div class="sced-ui-actions">
+              <button class="sced-btn" data-uiact="scan">扫描界面</button>
+              <button class="sced-btn" data-uiact="save">保存界面</button>
+              <button class="sced-btn" data-uiact="export">导出JSON</button>
+              <button class="sced-btn" data-uiact="import">导入JSON</button>
+            </div>
+            <div class="sced-list" id="sced-ui-list"></div>
+          </div>
+          <div class="sced-tabpane" data-pane="props">
+            <div id="sced-inspector"></div>
+          </div>
+          <div class="sced-tabpane" data-pane="layout">
+            <div class="sced-list">
+              <button class="sced-btn wide" data-act="save">保存布局（3D + 界面）</button>
+              <button class="sced-btn wide" data-act="export">导出 JSON</button>
+              <button class="sced-btn wide" data-act="import-json">导入 JSON</button>
+              <button class="sced-btn wide" data-act="reset">重置 3D 布局</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="sced-panel sced-inspector" id="sced-inspector"></div>
       <div class="sced-panel sced-overlay">
         <div><b>编辑模式</b> · Tab 退出</div>
         <div class="sced-hint" id="sced-grid-hint"></div>
@@ -1146,22 +1462,46 @@ export class SceneEditor {
       if (!btn) return
       const mode = btn.dataset.mode
       if (mode) { this.setTransformMode(mode); return }
-      switch (btn.dataset.act) {
-        case 'import': this._openFilePicker(); break
-        case 'save': this._toast(this.save() ? '已保存到本地' : '保存失败'); break
-        case 'export': this.exportJSON(); break
-        case 'import-json': this._openJSONPicker(); break
-        case 'space': this.setSpace(this.space === 'world' ? 'local' : 'world'); break
-        case 'unit': this.setUnit(this.unit === 'm' ? 'cm' : 'm'); break
-        case 'undo': this.undo(); break
-        case 'redo': this.redo(); break
-        case 'duplicate': this.duplicateSelected(); break
-        case 'delete': this.deleteSelected(); break
-        case 'reset': this.resetLayout(); break
-        case 'focus': this.focusSelected(); break
-        default: break
-      }
+      this._runToolbarAction(btn.dataset.act)
     })
+
+    // 侧边栏标签页
+    this._tabsEl = root.querySelector('.sced-tabs')
+    this._panesEl = root.querySelector('.sced-tabpanes')
+    this._tabsEl.addEventListener('click', (e) => {
+      const t = e.target.closest('.sced-tab')
+      if (t) this.setSidebarTab(t.dataset.tab)
+    })
+    root.querySelector('.sced-tabpane[data-pane="layout"]').addEventListener('click', (e) => {
+      const btn = e.target.closest('button')
+      if (btn) this._runToolbarAction(btn.dataset.act)
+    })
+
+    // 界面标签页（DOM UI 编辑）
+    this._uiList = root.querySelector('#sced-ui-list')
+    root.querySelector('.sced-tabpane[data-pane="ui"]').addEventListener('click', (e) => {
+      const act = e.target.closest('button')?.dataset.uiact
+      if (act) { this._runUIAction(act); return }
+      const item = e.target.closest('.sced-item')
+      if (item?.dataset.id) { this.ui?.select(item.dataset.id); this._refreshUIList() }
+    })
+    this._uiJsonInput = document.createElement('input')
+    this._uiJsonInput.type = 'file'
+    this._uiJsonInput.accept = '.json'
+    this._uiJsonInput.style.display = 'none'
+    this._uiJsonInput.addEventListener('change', () => {
+      const f = this._uiJsonInput.files?.[0]
+      if (f) {
+        const rd = new FileReader()
+        rd.onload = () => {
+          try { this.ui?.applyLayout(JSON.parse(rd.result)); this._refreshUIList() } catch { this._toast('界面 JSON 解析失败') }
+        }
+        rd.readAsText(f)
+      }
+      this._uiJsonInput.value = ''
+    })
+    root.appendChild(this._uiJsonInput)
+    this._refreshUIList()
 
     this._fileInput = document.createElement('input')
     this._fileInput.type = 'file'
@@ -1189,6 +1529,99 @@ export class SceneEditor {
 
   _openFilePicker() { this._fileInput.click() }
   _openJSONPicker() { this._jsonInput.click() }
+
+  _runToolbarAction(act) {
+    switch (act) {
+      case 'import': this._openFilePicker(); break
+      case 'save': this._toast(this.save() ? '已保存到本地' : '保存失败'); break
+      case 'export': this.exportJSON(); break
+      case 'import-json': this._openJSONPicker(); break
+      case 'space': this.setSpace(this.space === 'world' ? 'local' : 'world'); break
+      case 'unit': this.setUnit(this.unit === 'm' ? 'cm' : 'm'); break
+      case 'undo': this.undo(); break
+      case 'redo': this.redo(); break
+      case 'duplicate': this.duplicateSelected(); break
+      case 'delete': this.deleteSelected(); break
+      case 'reset': this.resetLayout(); break
+      case 'focus': this.focusSelected(); break
+      default: break
+    }
+  }
+
+  setSidebarTab(name) {
+    if (!this._tabsEl) return
+    this._tabsEl.querySelectorAll('.sced-tab').forEach((t) => {
+      t.classList.toggle('is-active', t.dataset.tab === name)
+    })
+    this._panesEl.querySelectorAll('.sced-tabpane').forEach((p) => {
+      p.classList.toggle('is-active', p.dataset.pane === name)
+    })
+    this.activeTab = name
+    return this
+  }
+
+  // ---------------------------------------------------------
+  // 界面（DOM UI）编辑
+  // ---------------------------------------------------------
+  scanUI(selectors = null) {
+    if (!this.ui) return 0
+    const n = this.ui.scan(document.body, { autoSelectors: selectors || this.uiAutoSelectors })
+    this.ui.restore()
+    this._refreshUIList()
+    return n
+  }
+
+  registerUI(el, meta = {}) {
+    if (!this.ui) return null
+    const id = this.ui.register(el, meta)
+    this._refreshUIList()
+    return id
+  }
+
+  _runUIAction(act) {
+    if (!this.ui) return
+    switch (act) {
+      case 'scan': {
+        const n = this.scanUI()
+        this._toast(`扫描到 ${n} 个界面元素`)
+        break
+      }
+      case 'save':
+        this.ui.save()
+        this._toast('界面布局已保存')
+        break
+      case 'export': {
+        const blob = new Blob([JSON.stringify({ version: HTML_VERSION, ui: this.ui.serialize() }, null, 2)], { type: 'application/json' })
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = 'ui-layout.json'
+        a.click()
+        URL.revokeObjectURL(a.href)
+        break
+      }
+      case 'import':
+        this._uiJsonInput?.click()
+        break
+      default: break
+    }
+  }
+
+  _refreshUIList() {
+    if (!this._uiList) return
+    if (!this.ui) {
+      this._uiList.innerHTML = '<div class="sced-empty">界面编辑未启用</div>'
+      return
+    }
+    const items = this.ui.list()
+    if (!items.length) {
+      this._uiList.innerHTML = '<div class="sced-empty">未登记界面元素<br>点「扫描界面」，或用 editor.registerUI(el)</div>'
+      return
+    }
+    this._uiList.innerHTML = items.map((r) => {
+      const sel = this.ui.selection === r.id ? ' selected' : ''
+      return `<div class="sced-item${sel}" data-id="${escapeHtml(r.id)}">${escapeHtml(r.name)}</div>`
+    }).join('')
+  }
 
   _toast(msg) {
     if (!this._toastEl) return

@@ -13,6 +13,12 @@
 </head>
 <body>
   <div id="hint">按 Tab 进入编辑模式</div>
+  <div id="demo-ui" data-ui-id="hud" data-ui-name="示例面板"
+       style="position:fixed; right:28px; bottom:28px; width:200px; padding:12px; z-index:50;
+              background:rgba(20,24,34,.92); color:#eee; border:1px solid #4ea1ff; border-radius:8px;
+              font:13px/1.5 system-ui,'Microsoft YaHei'">
+    <b>示例 UI 面板</b><br><small style="color:#9aa4b2">编辑模式下可拖动 / 缩放</small>
+  </div>
   <script type="module">
     import * as THREE from 'three'
     import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -120,6 +126,21 @@
       body.castShadow = roof.castShadow = true
       scene.add(combo)
 
+      // 2D 资产（Sprite）——用于验证编辑器的 2D 拾取
+      const cvs = document.createElement('canvas')
+      cvs.width = cvs.height = 128
+      const c2 = cvs.getContext('2d')
+      c2.fillStyle = '#ffd75e'; c2.fillRect(0, 0, 128, 128)
+      c2.fillStyle = '#3a2a10'; c2.font = 'bold 34px system-ui'; c2.textAlign = 'center'
+      c2.fillText('告示', 64, 76)
+      const sign = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(cvs), transparent: true,
+      }))
+      sign.name = '告示牌2D'
+      sign.scale.set(1.6, 1.6, 1)
+      sign.position.set(-2.5, 1.8, 2.2)
+      scene.add(sign)
+
       const editor = new SceneEditor({
         scene, camera, renderer, controls,
         autoScan: false,
@@ -130,7 +151,9 @@
       editor.markAsAsset(car, { id: 'car', name: '汽车' })
       editor.markAsAsset(building, { id: 'building', name: '建筑' })
       editor.markAsAsset(combo, { id: 'combo_hut', name: '组合小屋' })
+      editor.markAsAsset(sign, { id: 'sign2d', name: '告示牌(2D)' })
       editor.scan()
+      editor.scanUI()   // 登记 data-ui-id 的界面元素
 
       window.__editor = editor
       window.__THREE = THREE

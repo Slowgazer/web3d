@@ -104,6 +104,14 @@ function removeImportBlock(text) {
   if (re2.test(text)) return { text: text.replace(re2, ''), removed: true }
   return { text, removed: false }
 }
+function removeImportMap(htmlPath) {
+  let text = ''
+  try { text = readFileSync(htmlPath, 'utf8') } catch { return false }
+  const re = /[ \t]*<!--[^\n]*importmap[^\n]*-->\r?\n?[ \t]*<script[^>]*data-scene-editor-importmap[^>]*>[\s\S]*?<\/script>\r?\n?/i
+  if (!re.test(text)) return false
+  writeFileSync(htmlPath, text.replace(re, ''), 'utf8')
+  return true
+}
 function walk(root, acc = [], guard = { n: 0 }) {
   let entries
   try { entries = readdirSync(root, { withFileTypes: true }) } catch { return acc }
@@ -147,6 +155,10 @@ function main() {
       if (!existsSync(f)) continue
       if (isOurFile(f)) { unlinkSync(f); removedFiles.push(rel) }
       else keptFiles.push(rel)
+    }
+    if (manifest.importmap?.html) {
+      const h = join(root, manifest.importmap.html)
+      if (existsSync(h) && removeImportMap(h)) removedEntries.push(relative(root, h) + '（importmap）')
     }
     try { unlinkSync(manifestPath) } catch {}
     if (manifest.backup) {

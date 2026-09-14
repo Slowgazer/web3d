@@ -127,9 +127,38 @@ function findEntryFromHtml(htmls, root) {
       || text.match(/<script[^>]*src=["']([^"']+)["'][^>]*type=["']module["']/i)
     if (!m) continue
     const file = join(root, m[1].replace(/^\//, ''))
-    if (existsSync(file)) return file
+    if (existsSync(file)) return { entry: file, html: h }
   }
   return null
+}
+
+// 无打包器时，用 importmap 让浏览器能解析 `three`（与宿主共用同一份 three 实例）
+const IMPORTMAP_MARK = 'data-scene-editor-importmap'
+function threeCdnVersion(pkg) {
+  const d = { ...((pkg && pkg.dependencies) || {}), ...((pkg && pkg.devDependencies) || {}) }
+  const v = (d.three || '').replace(/^[^\d]*/, '')
+  return /^\d/.test(v) ? v : '0.170.0'
+}
+function injectImportMap(htmlPath, pkg) {
+  const text = readSafe(htmlPath)
+  if (/<script[^>]*type=["']importmap["']/i.test(text)) return { text, added: false, reason: 'html 已有 importmap' }
+  const ver = threeCdnVersion(pkg)
+  const map = {
+    imports: {
+      three: `https://unpkg.com/three@${ver}/build/three.module.js`,
+      'three/addons/': `https://unpkg.com/three@${ver}/examples/jsm/`,
+      'three/examples/jsm/': `https://unpkg.com/three@${ver}/examples/jsm/`,
+    },
+  }
+  const block = `<!-- ${MARKER}：自动注入 importmap -->\n`
+    + `<script type="importmap" ${IMPORTMAP_MARK}>${JSON.stringify(map)}</script>\n`
+  const m = text.match(/<script[^>]*type=["']module["']/i)
+  if (m && typeof m.index === 'number') {
+    return { text: text.slice(0, m.index) + block + text.slice(m.index), added: true, version: ver }
+  }
+  const head = text.match(/<\/head>/i)
+  if (head) return { text: text.replace(/<\/head>/i, block + '</head>'), added: true, version: ver }
+  return { text: block + text, added: true, version: ver }
 }
 
 function scoreEntry(file) {
@@ -207,7 +236,8 @@ function main() {
   const bundler = detectBundler(projectRoot, pkg)
   const htmls = collectHtml(projectRoot)
   const globalThree = htmls.some((h) => /<script[^>]*src=["'][^"']*three(\.min)?\.js/i.test(readSafe(h)))
-  const fromHtml = findEntryFromHtml(htmls, projectRoot)
+  const fromHtmlInfo = findEntryFromHtml(htmls, projectRoot)
+  const fromHtml = fromHtmlInfo ? fromHtmlInfo.entry : null
   const files = walk(projectRoot)
   const hasWebGL = files.some((f) => /new\s+(THREE\.)?WebGLRenderer/.test(readSafe(f)))
 
@@ -277,6 +307,19 @@ function main() {
     log(warn(`未修改入口（${reason}）`))
   }
 
+  // 无打包器：给 html 注入 importmap，让 `three` 能被解析（与宿主共用同一份）
+  let importmap = null
+  if (!bundler.found && fromHtmlInfo?.html) {
+    const r = injectImportMap(fromHtmlInfo.html, pkg)
+    if (r.added) {
+      writeFileSync(fromHtmlInfo.html, r.text, 'utf8')
+      importmap = { html: relative(projectRoot, fromHtmlInfo.html), three: r.version }
+      log(ok(`已注入 importmap（three@${r.version}）到 ${relative(projectRoot, fromHtmlInfo.html)}`))
+    } else {
+      log(warn(`未注入 importmap（${r.reason}）`))
+    }
+  }
+
   const manifest = {
     tool: 'scene-editor',
     version: 1,
@@ -288,6 +331,7 @@ function main() {
     marker: MARKER,
     copied: SRC_FILES.map((f) => relative(projectRoot, join(destDir, f))).filter((p) => existsSync(join(projectRoot, p))),
     backup,
+    importmap,
   }
   writeFileSync(join(projectRoot, MANIFEST), JSON.stringify(manifest, null, 2), 'utf8')
   log(ok(`已写入安装记录：${MANIFEST}`))
