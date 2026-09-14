@@ -21,3 +21,6 @@ patch_*.py
 read_gen_err.py
 regen_all.py
 capture_renders.mjs
+
+# 编辑器套件打包产物
+scene-editor-kit.zip
