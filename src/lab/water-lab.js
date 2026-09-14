@@ -103,6 +103,14 @@ void main() {
   spec = smoothstep(0.25, 0.85, spec);
   col += uSunColor * spec * 0.9;
 
+  // 太阳光路（glitter）：朝太阳方向的水平角 + 细波纹打断
+  vec2 Vxz = normalize(V.xz + vec2(1e-4));
+  vec2 Sxz = normalize(S.xz + vec2(1e-4));
+  float toward = pow(max(dot(Vxz, Sxz), 0.0), 5.0);
+  float gn = vnoise(rp * 0.9 + uTime * 0.6);
+  float glitter = toward * smoothstep(0.55, 1.0, gn) * smoothstep(0.2, 0.85, spec);
+  col += uSunColor * glitter * 1.6;
+
   // 波峰泡沫（噪声打断，避免整条白线）
   float fn = vnoise(vWorld.xz * 0.08 + uTime * 0.05);
   float foam = smoothstep(0.5, 1.0, vFoam) * smoothstep(0.4, 0.85, fn);
@@ -165,9 +173,56 @@ export function bootWaterLab() {
 
   const sky = createGhibliSky(3000, sun)
   scene.add(sky.mesh)
+  // 大块柔和的云（更接近吉卜力手绘）
+  sky.uniforms.uCoverage.value = 0.6
+  sky.uniforms.uCloudSoft.value = 0.22
+  sky.uniforms.uCloudScale.value = 0.7
 
   const water = createWater(sun)
   scene.add(water.mesh)
+
+  // 远景小岛（低模，落在雾里做层次）
+  function makeIsland(radius, height, seed) {
+    const g = new THREE.Group()
+    const rockMat = new THREE.MeshStandardMaterial({ color: '#6f747c', roughness: 1, flatShading: true })
+    const grassMat = new THREE.MeshStandardMaterial({ color: '#5f8f4a', roughness: 1, flatShading: true })
+    const rock = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 7, 1), rockMat)
+    rock.position.y = height / 2
+    rock.rotation.y = seed
+    const grass = new THREE.Mesh(new THREE.ConeGeometry(radius * 1.06, height * 0.62, 7, 1), grassMat)
+    grass.position.y = height * 0.72
+    grass.rotation.y = seed + 0.3
+    g.add(rock, grass)
+    return g
+  }
+  const islandDefs = [
+    { x: -420, z: -900, r: 90, h: 70 },
+    { x: 380, z: -1250, r: 130, h: 95 },
+    { x: -1100, z: -700, r: 70, h: 55 },
+    { x: 950, z: -820, r: 60, h: 48 },
+    { x: 120, z: -1700, r: 170, h: 120 },
+  ]
+  islandDefs.forEach((d, i) => {
+    const isl = makeIsland(d.r, d.h, i * 1.7)
+    isl.position.set(d.x, -9, d.z)
+    scene.add(isl)
+  })
+
+  // 海鸥（简单 V 形，缓慢盘旋）
+  const gulls = []
+  const gullMat = new THREE.MeshBasicMaterial({ color: '#f4f6f8', side: THREE.DoubleSide, transparent: true, opacity: 0.95 })
+  for (let i = 0; i < 6; i++) {
+    const gull = new THREE.Group()
+    const wingGeo = new THREE.PlaneGeometry(2.2, 0.55)
+    const wl = new THREE.Mesh(wingGeo, gullMat)
+    wl.position.x = -1.05
+    const wr = new THREE.Mesh(wingGeo, gullMat)
+    wr.position.x = 1.05
+    gull.add(wl, wr)
+    gull.userData = { r: 40 + i * 14, a: Math.random() * 6.28, y: 16 + (i % 3) * 5, spd: 0.25 + Math.random() * 0.2, flap: Math.random() * 6.28 }
+    scene.add(gull)
+    gulls.push(gull)
+  }
 
   // 车厢 + 一段轨道（给水面做参照）
   const train = new THREE.Group()
@@ -183,9 +238,20 @@ export function bootWaterLab() {
   const clock = new THREE.Clock()
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05)
+    const t = performance.now() * 0.001
     water.uniforms.uTime.value += dt
     sky.uniforms.uTime.value += dt
     sky.update(dt)
+    // 海鸥盘旋 + 扇翅
+    for (const g of gulls) {
+      const d = g.userData
+      d.a += d.spd * dt
+      g.position.set(Math.cos(d.a) * d.r, d.y + Math.sin(d.a * 2) * 1.5, Math.sin(d.a) * d.r - 120)
+      g.rotation.y = -d.a
+      const flap = Math.sin(t * 6 + d.flap) * 0.5
+      g.children[0].rotation.z = flap
+      g.children[1].rotation.z = -flap
+    }
     controls.update()
     renderer.render(scene, camera)
   })
