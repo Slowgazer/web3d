@@ -8,6 +8,7 @@
 import './story.css'
 import './p5r-dialog.css'
 import * as THREE from 'three'
+import { OCEAN_PRESETS } from './ocean.js'
 import { P5RDialogue } from './p5r-dialog.js'
 
 const CARRIAGES = [
@@ -45,14 +46,22 @@ function tween(dur, fn) {
   })
 }
 
-// 海面：白天几乎不透明且鲜艳；黄昏 / 夜晚回到半透明
+// 海面：白天几乎不透明且鲜艳；黄昏 / 夜晚回到半透明（预设来自 ocean.js）
 const OCEAN_DAY = {
-  deep: new THREE.Color('#1f6fd0'), mid: new THREE.Color('#3ab7f0'), high: new THREE.Color('#ffffff'),
-  opacity: 1.0, deepOpacity: 1.0, wave: 0.12,
+  deep: new THREE.Color(OCEAN_PRESETS.day.uDeepColor),
+  mid: new THREE.Color(OCEAN_PRESETS.day.uMidColor),
+  high: new THREE.Color(OCEAN_PRESETS.day.uHighlight),
+  opacity: OCEAN_PRESETS.day.uOpacity,
+  deepOpacity: OCEAN_PRESETS.day.uDeepOpacity,
+  wave: OCEAN_PRESETS.day.uWaveHeight,
 }
 const OCEAN_DUSK = {
-  deep: new THREE.Color('#3a7aa5'), mid: new THREE.Color('#59c0e8'), high: new THREE.Color('#ffffff'),
-  opacity: 1.0, deepOpacity: 0.7, wave: 0.08,
+  deep: new THREE.Color(OCEAN_PRESETS.dusk.uDeepColor),
+  mid: new THREE.Color(OCEAN_PRESETS.dusk.uMidColor),
+  high: new THREE.Color(OCEAN_PRESETS.dusk.uHighlight),
+  opacity: OCEAN_PRESETS.dusk.uOpacity,
+  deepOpacity: OCEAN_PRESETS.dusk.uDeepOpacity,
+  wave: OCEAN_PRESETS.dusk.uWaveHeight,
 }
 
 function applyOcean(u, p) {

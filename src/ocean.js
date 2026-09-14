@@ -1,106 +1,200 @@
+// ============================================================================
+// 动漫风格 Voronoi 海面（参考 cortiz2894/water-anime-shader）
+// 主场景与调参场景共用同一套代码，保证「调参 = 游戏里生效」。
+// ============================================================================
 import * as THREE from 'three'
 
-const vertexShader = `
-uniform float uTime;
-uniform float uWaveHeight;
-uniform float uWaveFreq;
-
-varying float vElevation;
-varying vec2 vUv;
-
-// 伪随机函数用于浪花变化
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+export const OCEAN_DEFAULTS = {
+  uScale: 0.23,
+  uSmoothness: 0.46,
+  uEdgeThreshold: 0.09,
+  uEdgeSoftness: 0.01,
+  uFlowX: 0.07,
+  uFlowZ: -0.23,
+  uCellSpeed: 0.55,
+  uNoiseScale: 0.87,
+  uNoiseFlowSpeed: 0.11,
+  uDistortAmount: 0.26,
+  uDeepColor: '#3a7aa5',
+  uMidColor: '#59c0e8',
+  uMidPos: 0.31,
+  uHighlight: '#ffffff',
+  uOpacity: 1.0,
+  uDeepOpacity: 0.7,
+  uFadeDistance: 1000,
+  uFadeStrength: 0.8,
+  uWaveHeight: 0.08,
+  uWaveFreq: 0.3,
+  uWaveSpeed: 0.5,
 }
 
-void main() {
-  vUv = uv;
-  vec3 pos = position;
-
-  // 多层波浪叠加，模拟吉卜力风格的柔和海面
-  float w1 = sin(pos.x * uWaveFreq + uTime * 0.8) * uWaveHeight;
-  float w2 = sin(pos.y * uWaveFreq * 0.7 + uTime * 1.1) * uWaveHeight * 0.6;
-  float w3 = sin((pos.x + pos.y) * uWaveFreq * 0.4 + uTime * 0.5) * uWaveHeight * 0.3;
-  float w4 = sin(pos.x * uWaveFreq * 1.3 - uTime * 0.6) * uWaveHeight * 0.2;
-  float w5 = sin(pos.y * uWaveFreq * 1.1 - uTime * 0.9) * uWaveHeight * 0.15;
-
-  pos.z = w1 + w2 + w3 + w4 + w5;
-  vElevation = pos.z;
-
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+// 昼夜海面预设（游戏与调参场景共用）：白天几乎不透明且鲜艳；黄昏/夜晚偏半透明
+export const OCEAN_PRESETS = {
+  day: { uDeepColor: '#1f6fd0', uMidColor: '#3ab7f0', uHighlight: '#ffffff', uOpacity: 1.0, uDeepOpacity: 1.0, uWaveHeight: 0.12 },
+  dusk: { uDeepColor: '#3a7aa5', uMidColor: '#59c0e8', uHighlight: '#ffffff', uOpacity: 1.0, uDeepOpacity: 0.7, uWaveHeight: 0.08 },
 }
-`
 
-const fragmentShader = `
-uniform float uTime;
-uniform vec3 uColorShallow;
-uniform vec3 uColorMid;
-uniform vec3 uColorDeep;
-uniform vec3 uColorFoam;
-uniform float uFoamOffset;
-uniform vec3 uFogNearColor;
-uniform vec3 uFogFarColor;
-
-varying float vElevation;
-varying vec2 vUv;
-
-void main() {
-  // 基于高度进行三层渐变（吉卜力风格色带）
-  float h = (vElevation + 1.5) / 3.0;
-  h = clamp(h, 0.0, 1.0);
-
-  vec3 color;
-  if (h < 0.4) {
-    color = mix(uColorDeep, uColorMid, h / 0.4);
-  } else {
-    color = mix(uColorMid, uColorShallow, (h - 0.4) / 0.6);
-  }
-
-  // 浪花（波峰白色泡沫）
-  float foam = smoothstep(uFoamOffset, uFoamOffset + 0.15, vElevation);
-  color = mix(color, uColorFoam, foam * 0.8);
-
-  // 在波浪之间添加微弱的白色线条
-  float foamLine = smoothstep(0.3, 0.5, fract(vElevation * 3.0 + uTime * 0.2));
-  color = mix(color, uColorFoam, foamLine * 0.15);
-
-  // 简单雾效
-  float depth = gl_FragCoord.z / gl_FragCoord.w;
-  float fogFactor = smoothstep(30.0, 80.0, depth);
-  color = mix(color, uFogFarColor, fogFactor);
-
-  gl_FragColor = vec4(color, 1.0);
-}
-`
-
-export function createOcean() {
-  const geometry = new THREE.PlaneGeometry(200, 200, 200, 200)
-  geometry.rotateX(-Math.PI / 2)
-
-  const uniforms = {
+export function createAnimeOcean(options = {}) {
+  const cfg = { ...OCEAN_DEFAULTS, ...options }
+  const u = {
     uTime: { value: 0 },
-    uWaveHeight: { value: 0.6 },
-    uWaveFreq: { value: 0.15 },
-    uColorShallow: { value: new THREE.Color('#88d8d8') },
-    uColorMid: { value: new THREE.Color('#4a9fc5') },
-    uColorDeep: { value: new THREE.Color('#1a3d5c') },
-    uColorFoam: { value: new THREE.Color('#f5fcff') },
-    uFoamOffset: { value: 0.15 },
-    uFogNearColor: { value: new THREE.Color('#b5dff5') },
-    uFogFarColor: { value: new THREE.Color('#8fc9e8') },
+    uScale: { value: cfg.uScale },
+    uSmoothness: { value: cfg.uSmoothness },
+    uEdgeThreshold: { value: cfg.uEdgeThreshold },
+    uEdgeSoftness: { value: cfg.uEdgeSoftness },
+    uFlowX: { value: cfg.uFlowX },
+    uFlowZ: { value: cfg.uFlowZ },
+    uCellSpeed: { value: cfg.uCellSpeed },
+    uNoiseScale: { value: cfg.uNoiseScale },
+    uNoiseFlowSpeed: { value: cfg.uNoiseFlowSpeed },
+    uDistortAmount: { value: cfg.uDistortAmount },
+    uDeepColor: { value: new THREE.Color(cfg.uDeepColor) },
+    uMidColor: { value: new THREE.Color(cfg.uMidColor) },
+    uMidPos: { value: cfg.uMidPos },
+    uHighlight: { value: new THREE.Color(cfg.uHighlight) },
+    uOpacity: { value: cfg.uOpacity },
+    uDeepOpacity: { value: cfg.uDeepOpacity },
+    uFadeDistance: { value: cfg.uFadeDistance },
+    uFadeStrength: { value: cfg.uFadeStrength },
+    uCamXZ: { value: new THREE.Vector2() },
+    uWaveHeight: { value: cfg.uWaveHeight },
+    uWaveFreq: { value: cfg.uWaveFreq },
+    uWaveSpeed: { value: cfg.uWaveSpeed },
   }
 
-  const material = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader,
-    fragmentShader,
+  const geo = new THREE.PlaneGeometry(cfg.planeSize ?? 3000, cfg.planeSize ?? 3000, cfg.planeSegments ?? 200, cfg.planeSegments ?? 200)
+  geo.rotateX(-Math.PI / 2)
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: u,
+    transparent: true,
+    depthWrite: false,
     side: THREE.DoubleSide,
-    transparent: false,
+    vertexShader: `
+      uniform float uTime;
+      uniform float uWaveHeight;
+      uniform float uWaveFreq;
+      uniform float uWaveSpeed;
+      varying vec2 vWorldPos;
+
+      void main() {
+        vec3 pos = position;
+        float w = sin(pos.x * uWaveFreq + pos.z * uWaveFreq * 0.7 + uTime * uWaveSpeed) * uWaveHeight
+                + sin(pos.x * uWaveFreq * 0.5 - pos.z * uWaveFreq * 0.3 + uTime * uWaveSpeed * 0.6) * uWaveHeight * 0.5;
+        pos.y = w;
+        vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+        vWorldPos = worldPos.xz;
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uScale;
+      uniform float uSmoothness;
+      uniform float uEdgeThreshold;
+      uniform float uEdgeSoftness;
+      uniform float uFlowX;
+      uniform float uFlowZ;
+      uniform float uCellSpeed;
+      uniform float uNoiseScale;
+      uniform float uNoiseFlowSpeed;
+      uniform float uDistortAmount;
+      uniform vec3 uDeepColor;
+      uniform vec3 uMidColor;
+      uniform float uMidPos;
+      uniform vec3 uHighlight;
+      uniform float uOpacity;
+      uniform float uDeepOpacity;
+      uniform float uFadeDistance;
+      uniform float uFadeStrength;
+      uniform vec2 uCamXZ;
+      varying vec2 vWorldPos;
+
+      vec2 hash2(vec2 p) {
+        p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+        return fract(sin(p) * 43758.5453);
+      }
+
+      float smin(float a, float b, float k) {
+        float h = max(k - abs(a - b), 0.0) / k;
+        return min(a, b) - h * h * h * k / 6.0;
+      }
+
+      vec2 cellPt(vec2 seed) {
+        return 0.5 + 0.5 * sin(uTime * uCellSpeed + 6.2831 * seed);
+      }
+
+      vec2 voronoiF1Pair(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        float md = 8.0;
+        float res = 8.0;
+        for (int y = -1; y <= 1; y++)
+          for (int x = -1; x <= 1; x++) {
+            vec2 n = vec2(float(x), float(y));
+            vec2 pt = cellPt(hash2(i + n));
+            float d = length(n + pt - f);
+            md = min(md, d);
+            res = smin(res, d, uSmoothness);
+          }
+        return vec2(md, res);
+      }
+
+      float nHash(vec2 p) {
+        p = fract(p * vec2(127.1, 311.7));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+
+      float vnoise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(nHash(i), nHash(i + vec2(1.0, 0.0)), f.x),
+          mix(nHash(i + vec2(0.0, 1.0)), nHash(i + vec2(1.0, 1.0)), f.x),
+          f.y
+        );
+      }
+
+      float fbm(vec2 p) {
+        float v = 0.0, a = 0.5;
+        for (int i = 0; i < 2; i++) { v += a * vnoise(p); p *= 2.0; a *= 0.5; }
+        return v;
+      }
+
+      void main() {
+        vec2 noiseUV = vWorldPos * uNoiseScale + vec2(uTime * uNoiseFlowSpeed, 0.0);
+        float noiseFac = fbm(noiseUV);
+        vec2 distort = vec2(noiseFac - 0.5) * uDistortAmount;
+
+        vec2 uv = vWorldPos * uScale + vec2(uFlowX, uFlowZ) * uTime + distort;
+
+        vec2 f1Pair = voronoiF1Pair(uv);
+        float f1 = f1Pair.x;
+        float sf1 = f1Pair.y;
+        float edge = f1 - sf1;
+
+        float t = smoothstep(uEdgeThreshold - uEdgeSoftness, uEdgeThreshold + uEdgeSoftness, edge);
+
+        float safeMP = max(uMidPos, 0.001);
+        float seg0 = clamp(t / safeMP, 0.0, 1.0);
+        float seg1 = clamp((t - safeMP) / max(1.0 - safeMP, 0.001), 0.0, 1.0);
+        float inSeg1 = step(safeMP, t);
+        vec3 color = mix(
+          mix(uDeepColor, uMidColor, seg0),
+          mix(uMidColor, uHighlight, seg1),
+          inSeg1
+        );
+
+        float dist = length(vWorldPos - uCamXZ);
+        float fade = 1.0 - pow(clamp(dist / uFadeDistance, 0.0, 1.0), uFadeStrength);
+
+        float alpha = mix(uDeepOpacity, 1.0, t) * uOpacity * fade;
+        gl_FragColor = vec4(color, alpha);
+      }
+    `,
   })
 
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.y = -1.5
-  mesh.receiveShadow = true
-
-  return { mesh, uniforms }
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.y = cfg.y ?? -0.3
+  return { mesh, uniforms: u, material: mat }
 }
