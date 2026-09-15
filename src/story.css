@@ -12,6 +12,17 @@
 }
 #story-black.out { opacity: 0; }
 
+/* 右上角「召唤海鸥」按钮 */
+#btn-summon-gulls {
+  position: fixed; top: 14px; right: 14px; z-index: 95;
+  background: rgba(20, 24, 38, 0.92); color: #f6efdc;
+  border: 2px solid rgba(246, 239, 220, 0.5); border-radius: 6px;
+  padding: 8px 16px; font-family: 'Noto Sans SC', system-ui, sans-serif;
+  font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+#btn-summon-gulls:hover { background: #d94f4f; border-color: #fff; transform: translateY(-1px); }
+
 /* 左侧立绘：底部贴屏幕底 */
 #story-sprite {
   position: fixed;

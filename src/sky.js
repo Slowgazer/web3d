@@ -60,11 +60,12 @@ export const SKY_PRESETS = {
     floats: {
       uHorizonGlowStrength: 1.0,
       uSunGlow: 1.8,
-      uCoverage: 0.5,
-      uCloudScale: 1.0,
+      // 云的形状参数与白天一致（只改颜色/光照）
+      uCoverage: 0.64,
+      uCloudScale: 2.18,
       uCloudSpeed: 1.1,
-      uCloudSoft: 0.16,
-      uShadeSteps: 3,
+      uCloudSoft: 0.18,
+      uShadeSteps: 5,
     },
     sun: { position: [-26, 8, 14], intensity: 2.2, color: '#ffcf9e' },
   },
