@@ -28,21 +28,21 @@ export const SKY_PRESETS = {
     label: '夏日蓝天',
     colors: {
       uZenith: '#2f7fd4',          // 天顶湛蓝
-      uMid: '#7ec4ee',             // 中部浅蓝
-      uHorizon: '#e8f4fc',         // 地平线近白
+      uMid: '#85c4eb',             // 中部浅蓝
+      uHorizon: '#d4eeff',         // 地平线近白
       uHorizonGlowColor: '#fff3d0',
       uSunColor: '#fff2bd',
       uCloudLight: '#ffffff',      // 云受光面
-      uCloudDark: '#9cc2e6',       // 云背光面（淡蓝灰）
+      uCloudDark: '#f8f9fa',       // 云背光面（调参后接近白）
     },
     floats: {
       uHorizonGlowStrength: 0.35,
       uSunGlow: 1.1,
-      uCoverage: 0.54,
-      uCloudScale: 0.95,
-      uCloudSpeed: 1.25,
-      uCloudSoft: 0.13,
-      uShadeSteps: 3,
+      uCoverage: 0.64,
+      uCloudScale: 2.18,
+      uCloudSpeed: 1.1,
+      uCloudSoft: 0.18,
+      uShadeSteps: 5,
     },
     sun: { position: [20, 24, 10], intensity: 2.5, color: '#fff8e6' },
   },
@@ -221,8 +221,8 @@ export function createGhibliSky(radius = 1500, sunLight = null) {
     uCloudSoft: { value: 0.13 },
     uShadeSteps: { value: 3 },
     uCurve: { value: 0.2 },
-    uCloudLayerScale: { value: new THREE.Vector3(2.02, 2.02, 2.02) },
-    uCloudLayerAmp: { value: new THREE.Vector3(0.25, 0.125, 0.0625) },
+    uCloudLayerScale: { value: new THREE.Vector3(2.91, 1.79, 1.9) },
+    uCloudLayerAmp: { value: new THREE.Vector3(0.205, 0.08, 0.01) },
     uCloudLight: { value: new THREE.Color() },
     uCloudDark: { value: new THREE.Color() },
     uNightMode: { value: 0.0 },

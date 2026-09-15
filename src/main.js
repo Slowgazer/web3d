@@ -115,7 +115,7 @@ function loadFBX(path, targetHeight) {
 // ---- 场景初始化 ----
 const scene = new THREE.Scene()
 scene.background = new THREE.Color('#87ceeb')
-scene.fog = new THREE.Fog('#cde4f0', 70, 1700)
+scene.fog = new THREE.Fog('#cde4f0', 70, 885)
 
 const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 150)
 camera.position.set(15, 10, 20)
@@ -404,7 +404,7 @@ train.name = 'TrainRoot'
 let carriageModel = createCarriageModelById('summer')
 train.add(carriageModel)
 // 车厢轮底相对原点约 -0.30；轨道就位时轨面世界高度约 0.70 → 让车轮正好落在钢轨上
-train.position.set(0, 1.0, 0)
+train.position.set(0, 1.24, 0)
 scene.add(train)
 
 function setCarriage(id) {

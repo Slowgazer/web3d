@@ -5,32 +5,32 @@
 import * as THREE from 'three'
 
 export const OCEAN_DEFAULTS = {
-  uScale: 0.23,
-  uSmoothness: 0.46,
-  uEdgeThreshold: 0.09,
-  uEdgeSoftness: 0.01,
-  uFlowX: 0.07,
+  uScale: 0.2,
+  uSmoothness: 0.5,
+  uEdgeThreshold: 0.1,
+  uEdgeSoftness: 0.09,
+  uFlowX: 0.1,
   uFlowZ: -0.23,
   uCellSpeed: 0.55,
-  uNoiseScale: 0.87,
+  uNoiseScale: 0.88,
   uNoiseFlowSpeed: 0.11,
-  uDistortAmount: 0.26,
-  uDeepColor: '#3a7aa5',
-  uMidColor: '#59c0e8',
+  uDistortAmount: 0.3,
+  uDeepColor: '#92c6f2',
+  uMidColor: '#a4ddff',
   uMidPos: 0.31,
-  uHighlight: '#ffffff',
+  uHighlight: '#d4edff',
   uOpacity: 1.0,
-  uDeepOpacity: 0.7,
-  uFadeDistance: 1000,
+  uDeepOpacity: 1.0,
+  uFadeDistance: 700,
   uFadeStrength: 0.8,
-  uWaveHeight: 0.08,
+  uWaveHeight: 0.55,
   uWaveFreq: 0.3,
   uWaveSpeed: 0.5,
 }
 
 // 昼夜海面预设（游戏与调参场景共用）：白天几乎不透明且鲜艳；黄昏/夜晚偏半透明
 export const OCEAN_PRESETS = {
-  day: { uDeepColor: '#1f6fd0', uMidColor: '#3ab7f0', uHighlight: '#ffffff', uOpacity: 1.0, uDeepOpacity: 1.0, uWaveHeight: 0.12 },
+  day: { uDeepColor: '#92c6f2', uMidColor: '#a4ddff', uHighlight: '#d4edff', uOpacity: 1.0, uDeepOpacity: 1.0, uWaveHeight: 0.55 },
   dusk: { uDeepColor: '#3a7aa5', uMidColor: '#59c0e8', uHighlight: '#ffffff', uOpacity: 1.0, uDeepOpacity: 0.7, uWaveHeight: 0.08 },
 }
 
