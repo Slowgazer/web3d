@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { createGhibliSky } from '../sky.js'
 import { createCarriageModelById } from '../carriage.js'
 import { createRailwayTrackSegmentModel } from '../createTrackModel'
+import { spawnSeagulls } from '../seagull.js'
 
 // ---------- 风格化水面 ----------
 const WATER_VERT = /* glsl */ `
@@ -208,21 +209,11 @@ export function bootWaterLab() {
     scene.add(isl)
   })
 
-  // 海鸥（简单 V 形，缓慢盘旋）
-  const gulls = []
-  const gullMat = new THREE.MeshBasicMaterial({ color: '#f4f6f8', side: THREE.DoubleSide, transparent: true, opacity: 0.95 })
-  for (let i = 0; i < 6; i++) {
-    const gull = new THREE.Group()
-    const wingGeo = new THREE.PlaneGeometry(2.2, 0.55)
-    const wl = new THREE.Mesh(wingGeo, gullMat)
-    wl.position.x = -1.05
-    const wr = new THREE.Mesh(wingGeo, gullMat)
-    wr.position.x = 1.05
-    gull.add(wl, wr)
-    gull.userData = { r: 40 + i * 14, a: Math.random() * 6.28, y: 16 + (i % 3) * 5, spd: 0.25 + Math.random() * 0.2, flap: Math.random() * 6.28 }
-    scene.add(gull)
-    gulls.push(gull)
-  }
+  // 海鸥（Sketchfab 骨骼动画模型）
+  let seagulls = null
+  spawnSeagulls(scene, { count: 6, center: new THREE.Vector3(0, 13, -55), radius: 40, size: 1.6 })
+    .then((c) => { seagulls = c })
+    .catch((e) => console.warn('海鸥加载失败：', e))
 
   // 车厢 + 一段轨道（给水面做参照）
   const train = new THREE.Group()
@@ -242,16 +233,8 @@ export function bootWaterLab() {
     water.uniforms.uTime.value += dt
     sky.uniforms.uTime.value += dt
     sky.update(dt)
-    // 海鸥盘旋 + 扇翅
-    for (const g of gulls) {
-      const d = g.userData
-      d.a += d.spd * dt
-      g.position.set(Math.cos(d.a) * d.r, d.y + Math.sin(d.a * 2) * 1.5, Math.sin(d.a) * d.r - 120)
-      g.rotation.y = -d.a
-      const flap = Math.sin(t * 6 + d.flap) * 0.5
-      g.children[0].rotation.z = flap
-      g.children[1].rotation.z = -flap
-    }
+    // 海鸥盘旋 + 骨骼动画
+    if (seagulls) seagulls.update(dt)
     controls.update()
     renderer.render(scene, camera)
   })
